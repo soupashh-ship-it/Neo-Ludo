@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 class BotMultiplayerClient(
@@ -39,8 +41,8 @@ class BotMultiplayerClient(
 ) : MultiplayerClient {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var botJob: Job? = null
-
+    private val mutex = Mutex()
+    private var botExecutionJob: Job? = null
     private val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
     private val orderedColors = listOf(humanColor) + allColors.filter { it != humanColor }.take(botCount)
 
@@ -110,53 +112,91 @@ class BotMultiplayerClient(
         scope.launch {
             gameState.collect { state ->
                 if (state != null && !state.isGameOver) {
-                    checkAndTriggerBotTurn(state)
+                    triggerBotTurnIfNeeded(state)
                 }
             }
         }
     }
 
-    private fun checkAndTriggerBotTurn(state: GameState) {
-        val active = state.activePlayer
-        if (!active.isBot) return
+    private fun triggerBotTurnIfNeeded(state: GameState? = _gameState.value) {
+        val currentState = state ?: _gameState.value ?: return
+        if (currentState.isGameOver || !currentState.activePlayer.isBot) {
+            botExecutionJob?.cancel()
+            botExecutionJob = null
+            return
+        }
 
-        botJob?.cancel()
-        botJob = scope.launch {
+        if (botExecutionJob?.isActive == true) {
+            return // Already executing bot turn loop sequentially
+        }
+
+        botExecutionJob = scope.launch {
+            executeBotTurnLoop()
+        }
+    }
+
+    private suspend fun executeBotTurnLoop() {
+        while (true) {
+            val state = _gameState.value ?: break
+            if (state.isGameOver) break
+            val active = state.activePlayer
+            if (!active.isBot) break // Human player turn: pause bot loop
+
             when (state.turnPhase) {
                 TurnPhase.WAITING_FOR_ROLL -> {
-                    delay((450..700).random().toLong())
-                    val nextState = LudoGameEngine.rollDice(_gameState.value ?: state)
-                    _gameState.value = nextState
-                }
-                TurnPhase.WAITING_FOR_MOVE -> {
-                    delay((500..800).random().toLong())
-                    val currentState = _gameState.value ?: state
-                    val bestMove = LudoBotEngine.pickBestMove(currentState, difficulty)
-                    if (bestMove != null) {
-                        val nextState = LudoGameEngine.movePiece(currentState, bestMove.id)
-                        _gameState.value = nextState
+                    delay((550..850).random().toLong())
+                    mutex.withLock {
+                        val current = _gameState.value ?: return@withLock
+                        if (current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+                            val next = LudoGameEngine.rollDice(current)
+                            _gameState.value = next
+                        }
                     }
                 }
-                else -> Unit
+                TurnPhase.WAITING_FOR_MOVE -> {
+                    delay((600..900).random().toLong())
+                    mutex.withLock {
+                        val current = _gameState.value ?: return@withLock
+                        if (current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+                            val bestMove = LudoBotEngine.pickBestMove(current, difficulty)
+                            if (bestMove != null) {
+                                val next = LudoGameEngine.movePiece(current, bestMove.id)
+                                _gameState.value = next
+                            } else {
+                                val next = LudoGameEngine.passTurn(current)
+                                _gameState.value = next
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    delay(100)
+                }
             }
         }
     }
 
-    override suspend fun rollDice(): Result<Unit> {
+    override suspend fun rollDice(): Result<Unit> = mutex.withLock {
         val current = _gameState.value ?: return Result.failure(IllegalStateException("Game not started"))
+        if (current.isGameOver) return Result.failure(IllegalStateException("Game is over"))
         if (current.activePlayer.isBot) {
-            return Result.failure(IllegalStateException("Cannot roll for bot"))
+            return Result.failure(IllegalStateException("Cannot roll during bot turn"))
         }
         if (current.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
             return Result.failure(IllegalStateException("Cannot roll in phase ${current.turnPhase}"))
         }
+        if (!current.diceState.canRoll) {
+            return Result.failure(IllegalStateException("Dice cannot be rolled right now"))
+        }
         val next = LudoGameEngine.rollDice(current)
         _gameState.value = next
+        triggerBotTurnIfNeeded(next)
         return Result.success(Unit)
     }
 
-    override suspend fun movePiece(pieceId: Int): Result<Unit> {
+    override suspend fun movePiece(pieceId: Int): Result<Unit> = mutex.withLock {
         val current = _gameState.value ?: return Result.failure(IllegalStateException("Game not started"))
+        if (current.isGameOver) return Result.failure(IllegalStateException("Game is over"))
         if (current.activePlayer.isBot) {
             return Result.failure(IllegalStateException("Cannot move for bot"))
         }
@@ -165,9 +205,9 @@ class BotMultiplayerClient(
         }
         val next = LudoGameEngine.movePiece(current, pieceId)
         _gameState.value = next
+        triggerBotTurnIfNeeded(next)
         return Result.success(Unit)
     }
-
     override suspend fun sendChat(message: String): Result<Unit> {
         val human = presences.first()
         _chatEvents.emit(
@@ -201,13 +241,15 @@ class BotMultiplayerClient(
     override suspend fun setReady(isReady: Boolean): Result<Unit> = Result.success(Unit)
     override suspend fun startMatch(): Result<Unit> = Result.success(Unit)
     override suspend fun leaveRoom(): Result<Unit> {
-        botJob?.cancel()
+        botExecutionJob?.cancel()
+        botExecutionJob = null
         _roomState.value = _roomState.value?.copy(meta = _roomState.value!!.meta.copy(status = RoomStatus.COMPLETED))
         return Result.success(Unit)
     }
 
     override fun release() {
-        botJob?.cancel()
+        botExecutionJob?.cancel()
+        botExecutionJob = null
         scope.cancel()
     }
 }

@@ -198,8 +198,11 @@ fun CanvasLudoBoard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .pointerInput(gameState) {
+                .pointerInput(gameState, activeHop) {
                     detectTapGestures { offset ->
+                        if (activeHop != null || gameState.isGameOver || gameState.activePlayer.isBot || gameState.turnPhase != TurnPhase.WAITING_FOR_MOVE) {
+                            return@detectTapGestures
+                        }
                         val cellSize = size.width / 15f
                         val touchedPiece = findTouchedPiece(
                             touchX = offset.x,
@@ -208,7 +211,7 @@ fun CanvasLudoBoard(
                             gameState = gameState,
                             selectablePieceIds = selectablePieceIds
                         )
-                        if (touchedPiece != null) {
+                        if (touchedPiece != null && touchedPiece.id in selectablePieceIds) {
                             onPieceClick(touchedPiece.id)
                         }
                     }

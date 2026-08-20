@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.2.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.2.0.apk)**
+🔗 **[Download NeoLudo-v1.3.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.3.0.apk)**
 
 ---
 

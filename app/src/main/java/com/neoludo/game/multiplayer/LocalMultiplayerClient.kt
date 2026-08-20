@@ -18,14 +18,15 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
-
 class LocalMultiplayerClient(
     playerCount: Int = 4,
     ruleSet: LudoRuleSet = LudoRuleSet(),
     playerNames: List<String> = listOf("Red", "Green", "Yellow", "Blue")
 ) : MultiplayerClient {
-
+    private val mutex = Mutex()
     private val colors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE).take(playerCount)
     private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -74,18 +75,23 @@ class LocalMultiplayerClient(
     )
     override val gameState: StateFlow<GameState?> = _gameState.asStateFlow()
 
-    override suspend fun rollDice(): Result<Unit> {
+    override suspend fun rollDice(): Result<Unit> = mutex.withLock {
         val current = _gameState.value ?: return Result.failure(IllegalStateException("Game not started"))
+        if (current.isGameOver) return Result.failure(IllegalStateException("Game is over"))
         if (current.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
             return Result.failure(IllegalStateException("Cannot roll dice in phase ${current.turnPhase}"))
+        }
+        if (!current.diceState.canRoll) {
+            return Result.failure(IllegalStateException("Dice cannot be rolled right now"))
         }
         val next = LudoGameEngine.rollDice(current)
         _gameState.value = next
         return Result.success(Unit)
     }
 
-    override suspend fun movePiece(pieceId: Int): Result<Unit> {
+    override suspend fun movePiece(pieceId: Int): Result<Unit> = mutex.withLock {
         val current = _gameState.value ?: return Result.failure(IllegalStateException("Game not started"))
+        if (current.isGameOver) return Result.failure(IllegalStateException("Game is over"))
         if (current.turnPhase != TurnPhase.WAITING_FOR_MOVE) {
             return Result.failure(IllegalStateException("Cannot move piece in phase ${current.turnPhase}"))
         }

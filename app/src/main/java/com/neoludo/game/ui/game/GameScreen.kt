@@ -103,7 +103,7 @@ fun GameScreen(
     var showEmotePicker by remember { mutableStateOf(false) }
     var activeFloatingEmote by remember { mutableStateOf<ChatEvent?>(null) }
     var isRollingAnimation by remember { mutableStateOf(false) }
-
+    var isExecutingMove by remember { mutableStateOf(false) }
     var totalCaptures by remember { mutableIntStateOf(0) }
     var totalSixes by remember { mutableIntStateOf(0) }
 
@@ -254,8 +254,13 @@ fun GameScreen(
                 CanvasLudoBoard(
                     gameState = state,
                     onPieceClick = { pieceId ->
-                        scope.launch {
-                            client.movePiece(pieceId)
+                        if (!isExecutingMove && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+                            scope.launch {
+                                isExecutingMove = true
+                                client.movePiece(pieceId)
+                                delay(300)
+                                isExecutingMove = false
+                            }
                         }
                     },
                     onStepHop = {
@@ -289,11 +294,13 @@ fun GameScreen(
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
                     onRollDice = {
-                        scope.launch {
-                            isRollingAnimation = true
-                            client.rollDice()
-                            delay(280)
-                            isRollingAnimation = false
+                        if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
+                            scope.launch {
+                                isRollingAnimation = true
+                                client.rollDice()
+                                delay(300)
+                                isRollingAnimation = false
+                            }
                         }
                     }
                 )
@@ -330,11 +337,13 @@ fun GameScreen(
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
                     onRollDice = {
-                        scope.launch {
-                            isRollingAnimation = true
-                            client.rollDice()
-                            delay(280)
-                            isRollingAnimation = false
+                        if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
+                            scope.launch {
+                                isRollingAnimation = true
+                                client.rollDice()
+                                delay(300)
+                                isRollingAnimation = false
+                            }
                         }
                     }
                 )
@@ -573,15 +582,14 @@ private fun TurnActionTray(
             fontSize = 13.sp
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
-
         // 3D Animated Dice with Selected Skin
+        val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
         Dice3DRenderer(
-            diceState = state.diceState,
+            diceState = state.diceState.copy(canRoll = canInteract),
             playerColor = active.color,
             isRolling = isRolling,
             skin = diceSkin,
-            onRollClick = onRollDice,
+            onRollClick = { if (canInteract) onRollDice() },
             sizeDp = 78.dp
         )
     }
@@ -667,12 +675,13 @@ private fun TwoPlayerArcadeBottomBar(
                     modifier = Modifier.padding(6.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    val canInteract = !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
                     Dice3DRenderer(
-                        diceState = state.diceState,
+                        diceState = state.diceState.copy(canRoll = canInteract),
                         playerColor = state.activePlayer.color,
                         isRolling = isRolling,
                         skin = diceSkin,
-                        onRollClick = onRollDice,
+                        onRollClick = { if (canInteract) onRollDice() },
                         sizeDp = 64.dp
                     )
                 }

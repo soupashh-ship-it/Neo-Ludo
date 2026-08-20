@@ -110,4 +110,27 @@ class MultiplayerSyncTest {
 
         client.release()
     }
+
+    @Test
+    fun testConcurrentDiceSpamHandledSafely() = runTest {
+        val client = LocalMultiplayerClient(playerCount = 2)
+
+        // First roll
+        val r1 = client.rollDice()
+        assertThat(r1.isSuccess).isTrue()
+
+        val state = client.gameState.value
+        // If state is waiting for move, a second immediate roll attempt MUST fail
+        if (state?.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+            val r2 = client.rollDice()
+            assertThat(r2.isFailure).isTrue()
+        }
+    }
+    @Test
+    fun testInvalidPhaseMoveRejection() = runTest {
+        val client = LocalMultiplayerClient(playerCount = 2)
+        // In WAITING_FOR_ROLL phase, moving a piece must fail
+        val moveResult = client.movePiece(0)
+        assertThat(moveResult.isFailure).isTrue()
+    }
 }
