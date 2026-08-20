@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Neo Ludo</string>
+    <string name="app_tagline">Ad-Free &amp; Pure Play Multiplayer</string>
+    
+    <!-- Game Modes -->
+    <string name="mode_online">Play Online</string>
+    <string name="mode_friends">Play with Friends</string>
+    <string name="mode_local">Pass &amp; Play</string>
+    <string name="mode_ai">Vs Computer (AI)</string>
+
+    <!-- Colors -->
+    <string name="color_red">Ruby Red</string>
+    <string name="color_green">Emerald Green</string>
+    <string name="color_yellow">Amber Yellow</string>
+    <string name="color_blue">Cobalt Blue</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="ready">Ready</string>
+    <string name="start_game">Start Match</string>
+    <string name="copy_code">Copy Code</string>
+    <string name="share_room">Share Room</string>
+    <string name="leave_room">Leave Room</string>
+    <string name="surrender">Surrender</string>
+    <string name="play_again">Play Again</string>
+    <string name="main_menu">Main Menu</string>
+</resources>

@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomId": {
+        ".read": true,
+        ".write": "auth != null || !data.exists()",
+        "meta": {
+          ".validate": "newData.hasChildren(['roomId', 'hostId', 'status'])"
+        },
+        "players": {
+          "$playerId": {
+            ".write": "auth != null || $playerId === newData.child('id').val() || !data.exists()"
+          }
+        },
+        "gameState": {
+          ".write": "true"
+        },
+        "actions": {
+          ".write": "true"
+        },
+        "chat": {
+          ".write": "true"
+        }
+      }
+    }
+  }
+}
