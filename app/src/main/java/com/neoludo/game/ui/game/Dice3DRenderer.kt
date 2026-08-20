@@ -180,8 +180,40 @@ fun Dice3DRenderer(
 
             // 3. Render Custom Dice Skin
             when (skin) {
+                DiceSkin.RUBY_ARCADE -> {
+                    // Bold Arcade Crimson Red Body (Matching Reference Image #1)
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            listOf(Color(0xFFE53935), Color(0xFFD32F2F), Color(0xFFC62828)),
+                            start = Offset(0f, 0f),
+                            end = Offset(dSize, dSize)
+                        ),
+                        topLeft = Offset(0f, 0f),
+                        size = Size(dSize, dSize),
+                        cornerRadius = CornerRadius(cornerRadius, cornerRadius)
+                    )
+                    // Crisp white glossy top sheen
+                    val glintPath = Path().apply {
+                        moveTo(dSize * 0.15f, dSize * 0.15f)
+                        lineTo(dSize * 0.85f, dSize * 0.15f)
+                        lineTo(dSize * 0.15f, dSize * 0.85f)
+                        close()
+                    }
+                    drawPath(glintPath, Color.White.copy(alpha = 0.22f))
+
+                    // Smooth outer border
+                    drawRoundRect(
+                        color = if (diceState.canRoll) Color(0xFFFFD54F) else Color(0xFFB71C1C),
+                        topLeft = Offset(0f, 0f),
+                        size = Size(dSize, dSize),
+                        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+                        style = Stroke(width = if (diceState.canRoll) 3.5f else 2f)
+                    )
+
+                    // Crisp White Pips
+                    drawPipDots(displayedValue, dSize, Color.White)
+                }
                 DiceSkin.PRISM_CRYSTAL -> {
-                    // Translucent Refractive Glass Crystal
                     drawRoundRect(
                         brush = Brush.linearGradient(
                             listOf(Color(0xFFE0F7FA), Color(0xFF80DEEA), Color(0xFF26C6DA), Color(0xFF00838F)),

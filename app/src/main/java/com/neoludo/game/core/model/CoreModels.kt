@@ -11,6 +11,7 @@ enum class ThemeMode {
 
 @Serializable
 enum class BoardTheme(val displayName: String, val description: String) {
+    CLASSIC_ARCADE("Classic Arcade", "Vibrant primary colors, crisp white bases, directional arrows & classic arcade board"),
     CYBER_OBSIDIAN("Cyber Obsidian", "Deep space dark canvas with neon laser borders & glowing circuits"),
     ROYAL_PARCHMENT("Royal Parchment", "Vintage antique parchment board with warm gold filigree & wood trims"),
     SYNTHWAVE_NEON("Synthwave Neon", "80s retro cyber grid with electric magenta, cyan & hyperglow rails"),
@@ -19,14 +20,16 @@ enum class BoardTheme(val displayName: String, val description: String) {
 
 @Serializable
 enum class DiceSkin(val displayName: String, val description: String) {
+    RUBY_ARCADE("Ruby Arcade", "Bold arcade crimson red die with crisp white pips"),
+    CLASSIC_IVORY("Classic Ivory", "Traditional resin ivory with smooth beveled dark pips"),
     PRISM_CRYSTAL("Prism Crystal", "Translucent refractive crystal with glowing neon pips"),
     CARBON_CYBER("Carbon Cyber", "High-tech woven carbon fiber with electric cyan pips"),
-    ROYAL_GOLD("Royal Gold", "Polished 24k gold with inlaid ruby gem pips"),
-    CLASSIC_IVORY("Classic Ivory", "Traditional resin ivory with smooth beveled dark pips")
+    ROYAL_GOLD("Royal Gold", "Polished 24k gold with inlaid ruby gem pips")
 }
 
 @Serializable
 enum class PawnSkin(val displayName: String, val description: String) {
+    MAP_PINS("GPS Map Pins", "Classic white map-marker tokens with saturated colored cores & poker-chip bases"),
     CYBER_PIPS("Cyber Pips", "Glass neon orb tokens with orbiting pulse ring"),
     ROYAL_CROWNS("Royal Crowns", "Sculpted 3D golden imperial crown with inlaid gem"),
     CRYSTAL_GEMS("Crystal Gems", "Faceted hexagonal gem tokens with crystal shine")

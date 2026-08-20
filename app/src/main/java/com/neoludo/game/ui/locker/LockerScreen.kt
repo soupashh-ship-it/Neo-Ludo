@@ -360,6 +360,7 @@ fun LockerScreen(
                                     description = theme.description,
                                     isEquipped = isEquipped,
                                     accentColor = when (theme) {
+                                        BoardTheme.CLASSIC_ARCADE -> NeoLudoColors.EmeraldGreen
                                         BoardTheme.CYBER_OBSIDIAN -> NeoLudoColors.CobaltBlue
                                         BoardTheme.ROYAL_PARCHMENT -> Color(0xFFD4AF37)
                                         BoardTheme.SYNTHWAVE_NEON -> Color(0xFFFF007F)
@@ -379,6 +380,7 @@ fun LockerScreen(
                                     description = skin.description,
                                     isEquipped = isEquipped,
                                     accentColor = when (skin) {
+                                        DiceSkin.RUBY_ARCADE -> Color(0xFFE53935)
                                         DiceSkin.PRISM_CRYSTAL -> Color(0xFF00E5FF)
                                         DiceSkin.CARBON_CYBER -> Color(0xFF00F0FF)
                                         DiceSkin.ROYAL_GOLD -> Color(0xFFFFD700)
@@ -398,6 +400,7 @@ fun LockerScreen(
                                     description = skin.description,
                                     isEquipped = isEquipped,
                                     accentColor = when (skin) {
+                                        PawnSkin.MAP_PINS -> Color(0xFFE53935)
                                         PawnSkin.CYBER_PIPS -> NeoLudoColors.CobaltBlue
                                         PawnSkin.ROYAL_CROWNS -> Color(0xFFFFD700)
                                         PawnSkin.CRYSTAL_GEMS -> Color(0xFF00F0FF)
@@ -525,6 +528,38 @@ private fun DrawScope.drawPawnPreview(
     )
 
     when (pawnSkin) {
+        PawnSkin.MAP_PINS -> {
+            // 1. Base Disc
+            val discRadius = radius * 0.85f
+            val discCenter = Offset(center.x, center.y + radius * 0.7f)
+            drawCircle(color, discRadius, discCenter)
+            drawCircle(Color.White, discRadius, discCenter, style = Stroke(1.5f))
+
+            // 2. White Pin Body
+            val pinTop = Offset(center.x, center.y - radius * 0.4f)
+            val pinBottom = Offset(center.x, center.y + radius * 0.85f)
+            val headR = radius * 0.75f
+            val pinPath = Path().apply {
+                moveTo(pinTop.x, pinTop.y - headR)
+                cubicTo(
+                    pinTop.x + headR * 1.05f, pinTop.y - headR,
+                    pinTop.x + headR * 1.05f, pinTop.y + headR * 0.4f,
+                    pinBottom.x, pinBottom.y
+                )
+                cubicTo(
+                    pinTop.x - headR * 1.05f, pinTop.y + headR * 0.4f,
+                    pinTop.x - headR * 1.05f, pinTop.y - headR,
+                    pinTop.x, pinTop.y - headR
+                )
+                close()
+            }
+            drawPath(pinPath, Color.White)
+            drawPath(pinPath, Color(0xFF263238), style = Stroke(2f))
+
+            // 3. Colored Core Circle
+            drawCircle(color, radius * 0.42f, pinTop)
+            drawCircle(Color.White, radius * 0.12f, Offset(pinTop.x - radius * 0.14f, pinTop.y - radius * 0.14f))
+        }
         PawnSkin.CYBER_PIPS -> {
             drawCircle(
                 brush = Brush.radialGradient(

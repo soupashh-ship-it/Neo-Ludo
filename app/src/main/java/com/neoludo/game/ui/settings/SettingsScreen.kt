@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -54,6 +55,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var themeMode by remember { mutableStateOf(settings.themeMode) }
+    var boardTheme by remember { mutableStateOf(settings.boardTheme) }
+    var diceSkin by remember { mutableStateOf(settings.diceSkin) }
+    var pawnSkin by remember { mutableStateOf(settings.pawnSkin) }
     var soundVolume by remember { mutableFloatStateOf(settings.soundVolume) }
     var musicVolume by remember { mutableFloatStateOf(settings.musicVolume) }
     var hapticsEnabled by remember { mutableStateOf(settings.hapticsEnabled) }
@@ -64,6 +68,9 @@ fun SettingsScreen(
         onUpdateSettings(
             settings.copy(
                 themeMode = themeMode,
+                boardTheme = boardTheme,
+                diceSkin = diceSkin,
+                pawnSkin = pawnSkin,
                 soundVolume = soundVolume,
                 musicVolume = musicVolume,
                 hapticsEnabled = hapticsEnabled,
@@ -127,6 +134,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // 1. App Theme Mode
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -140,7 +148,7 @@ fun SettingsScreen(
                     Surface(
                         modifier = Modifier
                             .weight(1f)
-                            .height(50.dp)
+                            .height(46.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .clickable {
                                 themeMode = mode
@@ -159,6 +167,175 @@ fun SettingsScreen(
                                 color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 2. Board Theme Selector
+            Text(
+                text = "BOARD THEME",
+                color = NeoLudoColors.ObsidianTextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.neoludo.game.core.model.BoardTheme.entries.forEach { bTheme ->
+                    val isSelected = boardTheme == bTheme
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                boardTheme = bTheme
+                                syncSettings()
+                            }
+                            .border(
+                                1.5.dp,
+                                if (isSelected) NeoLudoColors.EmeraldGreen else NeoLudoColors.ObsidianBorder,
+                                RoundedCornerShape(14.dp)
+                            ),
+                        color = if (isSelected) NeoLudoColors.EmeraldGreenContainer.copy(alpha = 0.6f) else NeoLudoColors.ObsidianSurfaceCard
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = bTheme.displayName,
+                                    color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = bTheme.description,
+                                    color = NeoLudoColors.ObsidianTextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(NeoLudoColors.EmeraldGreen),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 3. 3D Dice Skin Selector
+            Text(
+                text = "3D DICE SKIN",
+                color = NeoLudoColors.ObsidianTextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                com.neoludo.game.core.model.DiceSkin.entries.forEach { dSkin ->
+                    val isSelected = diceSkin == dSkin
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                diceSkin = dSkin
+                                syncSettings()
+                            }
+                            .border(
+                                1.5.dp,
+                                if (isSelected) NeoLudoColors.RubyRed else NeoLudoColors.ObsidianBorder,
+                                RoundedCornerShape(12.dp)
+                            ),
+                        color = if (isSelected) NeoLudoColors.RubyRedContainer else NeoLudoColors.ObsidianSurfaceCard
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = dSkin.displayName.replace(" ", "\n"),
+                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 11.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 4. Pawn Token Skin Selector
+            Text(
+                text = "PAWN TOKEN STYLE",
+                color = NeoLudoColors.ObsidianTextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                com.neoludo.game.core.model.PawnSkin.entries.forEach { pSkin ->
+                    val isSelected = pawnSkin == pSkin
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                pawnSkin = pSkin
+                                syncSettings()
+                            }
+                            .border(
+                                1.5.dp,
+                                if (isSelected) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianBorder,
+                                RoundedCornerShape(12.dp)
+                            ),
+                        color = if (isSelected) NeoLudoColors.AmberYellowContainer else NeoLudoColors.ObsidianSurfaceCard
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = pSkin.displayName.replace(" ", "\n"),
+                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 11.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }
@@ -289,12 +466,10 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             // App About Info
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text(text = "Neo Ludo v1.1.0", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "Neo Ludo v1.2.0", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "100% Ad-Free • Pure Play Multiplayer", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
                 }
             }

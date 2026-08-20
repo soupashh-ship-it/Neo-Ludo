@@ -33,7 +33,11 @@ class MainActivity : ComponentActivity() {
             NeoLudoTheme(themeMode = settings.themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = NeoLudoColors.ObsidianBackground
+                    color = when (settings.themeMode) {
+                        com.neoludo.game.core.model.ThemeMode.DARK_OLED -> NeoLudoColors.ObsidianBackground
+                        com.neoludo.game.core.model.ThemeMode.LIGHT_TITANIUM -> NeoLudoColors.TitaniumBackground
+                        com.neoludo.game.core.model.ThemeMode.SYSTEM -> androidx.compose.material3.MaterialTheme.colorScheme.background
+                    }
                 ) {
                     NeoLudoNavHost(app = app)
                 }

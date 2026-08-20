@@ -85,6 +85,7 @@ object NeoLudoColors {
     }
 
     fun getBoardColors(theme: BoardTheme): LudoBoardPalette = when (theme) {
+        BoardTheme.CLASSIC_ARCADE -> ClassicArcadePalette
         BoardTheme.CYBER_OBSIDIAN -> CyberObsidianPalette
         BoardTheme.ROYAL_PARCHMENT -> RoyalParchmentPalette
         BoardTheme.SYNTHWAVE_NEON -> SynthwaveNeonPalette
@@ -117,6 +118,33 @@ data class LudoBoardPalette(
     val textPrimary: Color,
     val textSecondary: Color,
     val isDark: Boolean = true
+)
+
+val ClassicArcadePalette = LudoBoardPalette(
+    theme = BoardTheme.CLASSIC_ARCADE,
+    background = Color(0xFF0D254C),
+    cardSurface = Color(0xFFFFFFFF),
+    boardBorder = Color(0xFF003F8A),
+    boardBorderGlow = Color(0xFFFFD700),
+    cellPathDefault = Color(0xFFFFFFFF),
+    cellBorder = Color(0xFFB0BEC5),
+    starSafeColor = Color(0xFF455A64),
+    centerHomeColor = Color(0xFFECEFF1),
+    red = Color(0xFFE53935),
+    redGlow = Color(0xFFFF5252),
+    redContainer = Color(0xFFFFCDD2),
+    green = Color(0xFF43A047),
+    greenGlow = Color(0xFF66BB6A),
+    greenContainer = Color(0xFFC8E6C9),
+    yellow = Color(0xFFFDD835),
+    yellowGlow = Color(0xFFFFEE58),
+    yellowContainer = Color(0xFFFFF9C4),
+    blue = Color(0xFF00A0E9),
+    blueGlow = Color(0xFF4FC3F7),
+    blueContainer = Color(0xFFB3E5FC),
+    textPrimary = Color(0xFFFFFFFF),
+    textSecondary = Color(0xFFCFD8DC),
+    isDark = false
 )
 
 val CyberObsidianPalette = LudoBoardPalette(

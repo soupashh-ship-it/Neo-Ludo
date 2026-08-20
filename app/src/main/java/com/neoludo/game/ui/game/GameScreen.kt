@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -218,30 +219,31 @@ fun GameScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 2. Top Player Plates (Players 0 & 1)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                if (state.players.isNotEmpty()) {
-                    PlayerPlate(
-                        player = state.players[0],
-                        isActiveTurn = state.activePlayerIndex == 0,
-                        turnProgress = if (state.activePlayerIndex == 0) timerProgress.value else 1.0f,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                if (state.players.size > 1) {
-                    PlayerPlate(
-                        player = state.players[1],
-                        isActiveTurn = state.activePlayerIndex == 1,
-                        turnProgress = if (state.activePlayerIndex == 1) timerProgress.value else 1.0f,
-                        modifier = Modifier.weight(1f)
-                    )
+            // 2. Top Player Plates (Only for 3-4 Player Games)
+            if (state.players.size > 2) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (state.players.isNotEmpty()) {
+                        PlayerPlate(
+                            player = state.players[0],
+                            isActiveTurn = state.activePlayerIndex == 0,
+                            turnProgress = if (state.activePlayerIndex == 0) timerProgress.value else 1.0f,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    if (state.players.size > 1) {
+                        PlayerPlate(
+                            player = state.players[1],
+                            isActiveTurn = state.activePlayerIndex == 1,
+                            turnProgress = if (state.activePlayerIndex == 1) timerProgress.value else 1.0f,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
-
             Spacer(modifier = Modifier.weight(1f))
 
             // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics & Custom Skins
@@ -280,8 +282,23 @@ fun GameScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 4. Bottom Player Plates (Players 3 & 2)
-            if (state.players.size > 2) {
+            if (state.players.size == 2) {
+                // 4. Dedicated 2-Player Arcade Bottom Bar (Matching Reference Image #1)
+                TwoPlayerArcadeBottomBar(
+                    state = state,
+                    isRolling = isRollingAnimation,
+                    diceSkin = diceSkin,
+                    onRollDice = {
+                        scope.launch {
+                            isRollingAnimation = true
+                            client.rollDice()
+                            delay(280)
+                            isRollingAnimation = false
+                        }
+                    }
+                )
+            } else {
+                // 4-Player Bottom Plates
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -304,26 +321,26 @@ fun GameScreen(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 4-Player Turn Action Guidance & 3D Dice Tray
+                TurnActionTray(
+                    state = state,
+                    isRolling = isRollingAnimation,
+                    diceSkin = diceSkin,
+                    onRollDice = {
+                        scope.launch {
+                            isRollingAnimation = true
+                            client.rollDice()
+                            delay(280)
+                            isRollingAnimation = false
+                        }
+                    }
+                )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 5. Turn Action Guidance & 3D Dice Tray
-            TurnActionTray(
-                state = state,
-                isRolling = isRollingAnimation,
-                diceSkin = diceSkin,
-                onRollDice = {
-                    scope.launch {
-                        isRollingAnimation = true
-                        client.rollDice()
-                        delay(280)
-                        isRollingAnimation = false
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(26.dp))
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
         // Quick Emote & Chat Picker Overlay
@@ -570,6 +587,191 @@ private fun TurnActionTray(
     }
 }
 
+@Composable
+private fun TwoPlayerArcadeBottomBar(
+    state: com.neoludo.game.engine.model.GameState,
+    isRolling: Boolean,
+    diceSkin: DiceSkin,
+    onRollDice: () -> Unit
+) {
+    val p1 = state.players.getOrNull(0) ?: return
+    val p2 = state.players.getOrNull(1) ?: return
+    val isP1Turn = state.activePlayerIndex == 0
+    val isP2Turn = state.activePlayerIndex == 1
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp)),
+        color = Color(0xFF003F8A),
+        border = androidx.compose.foundation.BorderStroke(2.5.dp, Color(0xFFFFD54F)),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Player 1 (Left Side - "You")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (isP1Turn) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFD54F).copy(alpha = 0.3f))
+                                .border(2.dp, Color(0xFFFFD54F), CircleShape)
+                        )
+                    }
+                    MiniMapPinIcon(
+                        color = NeoLudoColors.getPlayerColor(p1.color),
+                        sizeDp = 36.dp
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = if (p1.isBot) p1.name else "You",
+                        color = if (isP1Turn) Color(0xFFFFD54F) else Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp
+                    )
+                    if (isP1Turn) {
+                        Text(
+                            text = if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL) "Tap Dice" else "Move",
+                            color = NeoLudoColors.EmeraldGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // Center Embedded Die Panel
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .padding(horizontal = 6.dp),
+                color = Color(0xFFFBE9E7),
+                border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFFCCBC)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier.padding(6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Dice3DRenderer(
+                        diceState = state.diceState,
+                        playerColor = state.activePlayer.color,
+                        isRolling = isRolling,
+                        skin = diceSkin,
+                        onRollClick = onRollDice,
+                        sizeDp = 64.dp
+                    )
+                }
+            }
+
+            // Player 2 (Right Side - "Com")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = if (p2.isBot) "Com" else p2.name,
+                        color = if (isP2Turn) Color(0xFFFFD54F) else Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp
+                    )
+                    if (isP2Turn) {
+                        Text(
+                            text = if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL) "Rolling..." else "Moving",
+                            color = NeoLudoColors.EmeraldGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Box(contentAlignment = Alignment.Center) {
+                    if (isP2Turn) {
+                        Box(
+                            modifier = Modifier
+                                 .size(46.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFD54F).copy(alpha = 0.3f))
+                                .border(2.dp, Color(0xFFFFD54F), CircleShape)
+                        )
+                    }
+                    MiniMapPinIcon(
+                        color = NeoLudoColors.getPlayerColor(p2.color),
+                        sizeDp = 36.dp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniMapPinIcon(
+    color: Color,
+    sizeDp: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.foundation.Canvas(modifier = modifier.size(sizeDp)) {
+        val w = size.width
+        val h = size.height
+        val pinTop = Offset(w / 2f, h * 0.38f)
+        val pinBottom = Offset(w / 2f, h * 0.95f)
+        val headR = w * 0.36f
+
+        // Base disc
+        drawCircle(
+            color = color,
+            radius = w * 0.36f,
+            center = Offset(w / 2f, h * 0.82f)
+        )
+        drawCircle(
+            color = Color.White,
+            radius = w * 0.36f,
+            center = Offset(w / 2f, h * 0.82f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+        )
+
+        // White Pin Body
+        val pinPath = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pinTop.x, pinTop.y - headR)
+            cubicTo(
+                pinTop.x + headR * 1.05f, pinTop.y - headR,
+                pinTop.x + headR * 1.05f, pinTop.y + headR * 0.4f,
+                pinBottom.x, pinBottom.y
+            )
+            cubicTo(
+                pinTop.x - headR * 1.05f, pinTop.y + headR * 0.4f,
+                pinTop.x - headR * 1.05f, pinTop.y - headR,
+                pinTop.x, pinTop.y - headR
+            )
+            close()
+        }
+        drawPath(pinPath, Color.White)
+        drawPath(pinPath, Color(0xFF263238), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
+
+        // Colored Core
+        drawCircle(color, headR * 0.55f, pinTop)
+        drawCircle(Color.White, headR * 0.18f, Offset(pinTop.x - headR * 0.2f, pinTop.y - headR * 0.2f))
+    }
+}
 @Composable
 private fun QuickEmotePicker(
     onSelectEmote: (String) -> Unit,

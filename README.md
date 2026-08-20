@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.1.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.1.0.apk)**
+🔗 **[Download NeoLudo-v1.2.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.2.0.apk)**
 
 ---
 
@@ -44,20 +44,24 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
 - **Hard AI (Threat Probability & Danger Heatmap)**: Computes enemy strike zones, risk ratios, vulnerability penalties, and positional safety scoring.
 
 ### 🎨 Neo-Ludo Multi-Theme Visual System & Cosmetics Locker
-- **4 Selectable Board Themes**:
+- **5 Selectable Board Themes**:
+  - **Classic Arcade**: Vibrant primary colors, crisp white bases, directional start arrows & classic arcade board (Ludo King style).
   - **Cyber Obsidian**: Deep space dark canvas with neon laser borders & glowing circuits.
   - **Royal Parchment**: Vintage antique parchment board with warm gold filigree & wood trims.
   - **Synthwave Neon**: 80s retro cyber grid with electric magenta, cyan & hyperglow rails.
   - **Frost Titanium**: Sleek frosted ice-glass with crystalline borders & minimal sheen.
-- **4 Customizable 3D Dice Skins**:
+- **5 Customizable 3D Dice Skins**:
+  - **Ruby Arcade**: Bold arcade crimson red die with crisp white pips.
+  - **Classic Ivory**: Traditional resin ivory with smooth beveled dark pips.
   - **Prism Crystal**: Translucent refractive crystal with glowing neon pips.
   - **Carbon Cyber**: High-tech woven carbon fiber with electric cyan pips.
-  - **Royal Gold**: Polished 24k gold with inlaid ruby gem pips.
-  - **Classic Ivory**: Traditional resin ivory with smooth beveled dark pips.
-- **3 Custom Pawn Token Styles**:
+  - **Royal Gold**: Polished 24k gold with inlaid ruby gemstone pips.
+- **4 Custom Pawn Token Styles**:
+  - **GPS Map Pins**: Classic white teardrop marker tokens with saturated colored cores & poker-chip base (matching classic mobile Ludo).
   - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
   - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
   - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
+- **Arcade 2-Player HUD Bar**: Dedicated "You vs Com" arcade plate bar with glowing active turn selection halos and embedded central die.
 - **Celebratory In-Board Visual FX**:
   - **Capture Shockwave Ripple**: Expanding alpha circle ripple at the capture coordinate.
   - **Home Starburst Rays**: Expanding gold rays with sparkling heads upon reaching home.
