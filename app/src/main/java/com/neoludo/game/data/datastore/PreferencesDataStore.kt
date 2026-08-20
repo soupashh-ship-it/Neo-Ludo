@@ -9,7 +9,10 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.neoludo.game.core.model.BoardTheme
+import com.neoludo.game.core.model.DiceSkin
 import com.neoludo.game.core.model.GameSettings
+import com.neoludo.game.core.model.PawnSkin
 import com.neoludo.game.core.model.ThemeMode
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
@@ -25,6 +28,9 @@ class PreferencesDataStore(private val context: Context) {
 
     companion object {
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val BOARD_THEME = stringPreferencesKey("board_theme")
+        val DICE_SKIN = stringPreferencesKey("dice_skin")
+        val PAWN_SKIN = stringPreferencesKey("pawn_skin")
         val SOUND_VOLUME = floatPreferencesKey("sound_volume")
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
         val MUSIC_VOLUME = floatPreferencesKey("music_volume")
@@ -42,6 +48,9 @@ class PreferencesDataStore(private val context: Context) {
     val settingsFlow: Flow<GameSettings> = context.dataStore.data.map { prefs ->
         GameSettings(
             themeMode = prefs[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK_OLED,
+            boardTheme = prefs[BOARD_THEME]?.let { runCatching { BoardTheme.valueOf(it) }.getOrNull() } ?: BoardTheme.CYBER_OBSIDIAN,
+            diceSkin = prefs[DICE_SKIN]?.let { runCatching { DiceSkin.valueOf(it) }.getOrNull() } ?: DiceSkin.PRISM_CRYSTAL,
+            pawnSkin = prefs[PAWN_SKIN]?.let { runCatching { PawnSkin.valueOf(it) }.getOrNull() } ?: PawnSkin.CYBER_PIPS,
             soundVolume = prefs[SOUND_VOLUME] ?: 1.0f,
             soundEnabled = prefs[SOUND_ENABLED] ?: true,
             musicVolume = prefs[MUSIC_VOLUME] ?: 0.7f,
@@ -57,6 +66,9 @@ class PreferencesDataStore(private val context: Context) {
     suspend fun updateSettings(settings: GameSettings) {
         context.dataStore.edit { prefs ->
             prefs[THEME_MODE] = settings.themeMode.name
+            prefs[BOARD_THEME] = settings.boardTheme.name
+            prefs[DICE_SKIN] = settings.diceSkin.name
+            prefs[PAWN_SKIN] = settings.pawnSkin.name
             prefs[SOUND_VOLUME] = settings.soundVolume
             prefs[SOUND_ENABLED] = settings.soundEnabled
             prefs[MUSIC_VOLUME] = settings.musicVolume
@@ -68,7 +80,6 @@ class PreferencesDataStore(private val context: Context) {
             prefs[REDUCED_MOTION] = settings.reducedMotion
         }
     }
-
     val profileFlow: Flow<UserProfile> = context.dataStore.data.map { prefs ->
         prefs[USER_PROFILE_JSON]?.let {
             runCatching { json.decodeFromString<UserProfile>(it) }.getOrNull()

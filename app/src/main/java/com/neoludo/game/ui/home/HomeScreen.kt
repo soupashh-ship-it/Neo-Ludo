@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
@@ -73,6 +74,7 @@ fun HomeScreen(
     onNavigateSettings: () -> Unit,
     onNavigateRules: () -> Unit,
     onNavigateFriendsList: () -> Unit,
+    onNavigateLocker: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showAiSetupDialog by remember { mutableStateOf(false) }
@@ -96,6 +98,7 @@ fun HomeScreen(
                     profile = profile,
                     stats = stats,
                     onProfileClick = onNavigateProfile,
+                    onLockerClick = onNavigateLocker,
                     onSettingsClick = onNavigateSettings,
                     onRulesClick = onNavigateRules
                 )
@@ -152,6 +155,17 @@ fun HomeScreen(
                     accentColor = NeoLudoColors.RubyRed,
                     badgeText = "SOLO BOT",
                     onClick = { showAiSetupDialog = true }
+                )
+            }
+
+            item {
+                GameModeCard(
+                    title = "Cosmetics Locker",
+                    subtitle = "Customize 4 Board Themes, 3D Dice Skins & Pawns",
+                    icon = Icons.Default.Palette,
+                    accentColor = Color(0xFFFF007F),
+                    badgeText = "CUSTOMIZE",
+                    onClick = onNavigateLocker
                 )
             }
 
@@ -625,6 +639,7 @@ private fun HomeHeader(
     profile: UserProfile,
     stats: UserStats,
     onProfileClick: () -> Unit,
+    onLockerClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onRulesClick: () -> Unit
 ) {
@@ -647,7 +662,7 @@ private fun HomeHeader(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
@@ -656,37 +671,55 @@ private fun HomeHeader(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Profile",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                    Text(
+                        text = profile.displayName.take(1).uppercase(),
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
                     )
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = profile.displayName,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                     Text(
-                        text = profile.displayName,
-                        color = Color.White,
+                        text = profile.playerTitle,
+                        color = NeoLudoColors.AmberYellow,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = "Win Rate: ${if (stats.totalMatches > 0) (stats.totalWins * 100 / stats.totalMatches) else 0}%",
-                        color = NeoLudoColors.EmeraldGreen,
-                        fontWeight = FontWeight.SemiBold,
                         fontSize = 11.sp
                     )
                 }
             }
         }
 
-        // Action Icons (Rules & Settings)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Action Icons (Locker, Rules & Settings)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            IconButton(
+                onClick = onLockerClick,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(NeoLudoColors.ObsidianSurfaceCard)
+                    .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = "Cosmetics Locker",
+                    tint = Color(0xFFFF007F),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
             IconButton(
                 onClick = onRulesClick,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(NeoLudoColors.ObsidianSurfaceCard)
                     .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
@@ -695,14 +728,14 @@ private fun HomeHeader(
                     imageVector = Icons.AutoMirrored.Filled.MenuBook,
                     contentDescription = "Rules Guide",
                     tint = NeoLudoColors.AmberYellow,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
             IconButton(
                 onClick = onSettingsClick,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(NeoLudoColors.ObsidianSurfaceCard)
                     .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
@@ -711,7 +744,7 @@ private fun HomeHeader(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
         }

@@ -24,6 +24,7 @@ import com.neoludo.game.multiplayer.LocalMultiplayerClient
 import com.neoludo.game.ui.friends.FriendsScreen
 import com.neoludo.game.ui.game.GameScreen
 import com.neoludo.game.ui.home.HomeScreen
+import com.neoludo.game.ui.locker.LockerScreen
 import com.neoludo.game.ui.profile.ProfileScreen
 import com.neoludo.game.ui.result.GameResultScreen
 import com.neoludo.game.ui.room.CreateRoomScreen
@@ -32,7 +33,6 @@ import com.neoludo.game.ui.room.LobbyWaitingRoomScreen
 import com.neoludo.game.ui.rules.RulesGuideScreen
 import com.neoludo.game.ui.settings.SettingsScreen
 import com.neoludo.game.ui.splash.SplashScreen
-
 sealed class Screen(val route: String) {
     data object Splash : Screen("splash")
     data object Home : Screen("home")
@@ -58,6 +58,7 @@ sealed class Screen(val route: String) {
     data object Friends : Screen("friends")
     data object Settings : Screen("settings")
     data object Rules : Screen("rules")
+    data object Locker : Screen("locker")
 }
 
 @Composable
@@ -108,7 +109,8 @@ fun NeoLudoNavHost(
                 onNavigateProfile = { navController.navigate(Screen.Profile.route) },
                 onNavigateSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateRules = { navController.navigate(Screen.Rules.route) },
-                onNavigateFriendsList = { navController.navigate(Screen.Friends.route) }
+                onNavigateFriendsList = { navController.navigate(Screen.Friends.route) },
+                onNavigateLocker = { navController.navigate(Screen.Locker.route) }
             )
         }
 
@@ -210,6 +212,12 @@ fun NeoLudoNavHost(
                 client = client,
                 soundController = app.soundController,
                 hapticController = app.hapticController,
+                boardTheme = settings.boardTheme,
+                diceSkin = settings.diceSkin,
+                pawnSkin = settings.pawnSkin,
+                onUpdateTheme = { newTheme ->
+                    coroutineScope.launch { app.settingsRepository.updateSettings(settings.copy(boardTheme = newTheme)) }
+                },
                 onGameFinished = { winnerColor, captures, sixes ->
                     navController.navigate(Screen.Result.createRoute(winnerColor.name, captures, sixes)) {
                         popUpTo(Screen.Home.route)
@@ -278,6 +286,33 @@ fun NeoLudoNavHost(
 
         composable(Screen.Rules.route) {
             RulesGuideScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Locker.route) {
+            LockerScreen(
+                currentBoardTheme = settings.boardTheme,
+                currentDiceSkin = settings.diceSkin,
+                currentPawnSkin = settings.pawnSkin,
+                onSelectBoardTheme = { theme ->
+                    coroutineScope.launch {
+                        app.settingsRepository.updateSettings(settings.copy(boardTheme = theme))
+                        app.profileRepository.updateProfile(profile.copy(selectedBoardTheme = theme))
+                    }
+                },
+                onSelectDiceSkin = { skin ->
+                    coroutineScope.launch {
+                        app.settingsRepository.updateSettings(settings.copy(diceSkin = skin))
+                        app.profileRepository.updateProfile(profile.copy(selectedDiceSkin = skin))
+                    }
+                },
+                onSelectPawnSkin = { skin ->
+                    coroutineScope.launch {
+                        app.settingsRepository.updateSettings(settings.copy(pawnSkin = skin))
+                        app.profileRepository.updateProfile(profile.copy(selectedPawnSkin = skin))
+                    }
+                },
                 onBack = { navController.popBackStack() }
             )
         }

@@ -2,6 +2,7 @@ package com.neoludo.game.data.repository
 
 import com.neoludo.game.core.model.Friend
 import com.neoludo.game.core.model.GameSettings
+import com.neoludo.game.core.model.MatchRecord
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
 import com.neoludo.game.data.datastore.PreferencesDataStore
@@ -41,9 +42,20 @@ class StatsRepository(private val dataStore: PreferencesDataStore) {
         mode: String,
         capturesMade: Int,
         sixesRolled: Int,
-        piecesHome: Int
+        piecesHome: Int,
+        winnerColor: String = "RED"
     ) {
         val current = getStats()
+        val newRecord = MatchRecord(
+            id = "match_${System.currentTimeMillis()}_${(100..999).random()}",
+            timestamp = System.currentTimeMillis(),
+            mode = mode,
+            isWin = isWin,
+            captures = capturesMade,
+            sixes = sixesRolled,
+            winnerColor = winnerColor
+        )
+        val updatedHistory = (listOf(newRecord) + current.matchHistory).take(50)
         val updated = current.copy(
             totalMatches = current.totalMatches + 1,
             totalWins = if (isWin) current.totalWins + 1 else current.totalWins,
@@ -52,7 +64,8 @@ class StatsRepository(private val dataStore: PreferencesDataStore) {
             totalPiecesHome = current.totalPiecesHome + piecesHome,
             aiWins = if (isWin && mode == "AI") current.aiWins + 1 else current.aiWins,
             onlineWins = if (isWin && mode == "ONLINE") current.onlineWins + 1 else current.onlineWins,
-            localWins = if (isWin && mode == "LOCAL") current.localWins + 1 else current.localWins
+            localWins = if (isWin && mode == "LOCAL") current.localWins + 1 else current.localWins,
+            matchHistory = updatedHistory
         )
         dataStore.saveStats(updated)
     }

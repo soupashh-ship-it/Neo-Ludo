@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.0.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.0.0.apk)**
+🔗 **[Download NeoLudo-v1.1.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.1.0.apk)**
 
 ---
 
@@ -43,17 +43,31 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
 - **Normal AI (Tactical Heuristics)**: Weighted tactical decision tree (`Score Home > Capture Enemy > Release from Yard > Safe Zone Entry > Escape Threat > Advance`).
 - **Hard AI (Threat Probability & Danger Heatmap)**: Computes enemy strike zones, risk ratios, vulnerability penalties, and positional safety scoring.
 
-### 🎨 Neo-Ludo "Velvet & Obsidian" Design System
-- **Obsidian Dark OLED** (`#0B0E14`, `#151B26`) and **Titanium Light** (`#F0F4F8`) themes.
-- Saturated player accents: **Ruby Red** (`#FF3366`), **Emerald Green** (`#00E676`), **Amber Yellow** (`#FFD600`), and **Cobalt Blue** (`#2979FF`).
-- **60 FPS Custom Canvas Board**: 100% vector geometry with concentric pawn slots, glowing piece halos, and clustered radial multi-piece layouts when multiple tokens share a single cell.
-- **3D Animated Dice**: Isometric beveled cube shading, drop shadow, specular reflections, and physics tumble/bounce animations.
+### 🎨 Neo-Ludo Multi-Theme Visual System & Cosmetics Locker
+- **4 Selectable Board Themes**:
+  - **Cyber Obsidian**: Deep space dark canvas with neon laser borders & glowing circuits.
+  - **Royal Parchment**: Vintage antique parchment board with warm gold filigree & wood trims.
+  - **Synthwave Neon**: 80s retro cyber grid with electric magenta, cyan & hyperglow rails.
+  - **Frost Titanium**: Sleek frosted ice-glass with crystalline borders & minimal sheen.
+- **4 Customizable 3D Dice Skins**:
+  - **Prism Crystal**: Translucent refractive crystal with glowing neon pips.
+  - **Carbon Cyber**: High-tech woven carbon fiber with electric cyan pips.
+  - **Royal Gold**: Polished 24k gold with inlaid ruby gem pips.
+  - **Classic Ivory**: Traditional resin ivory with smooth beveled dark pips.
+- **3 Custom Pawn Token Styles**:
+  - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
+  - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
+  - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
+- **Celebratory In-Board Visual FX**:
+  - **Capture Shockwave Ripple**: Expanding alpha circle ripple at the capture coordinate.
+  - **Home Starburst Rays**: Expanding gold rays with sparkling heads upon reaching home.
+  - **Safe-Star Shields**: Continuous rotating stars and pulsing orbit shields on all 8 safe cells.
+  - **Confetti Celebration & 3-Tier Victory Podium**: Post-match ceremony with falling confetti particles.
+- **Career Hub & Match History**:
+  - 16 selectable avatar badges & player title badges (`Grandmaster`, `Dice Sorcerer`, `Board Conqueror`, `Pawn Crusher`, `Casual Roller`, `Speed Demon`).
+  - Match history log with win/loss badges, captures count, sixes rolled, and timestamp tracking.
 
 ### ⚡ Networking & Sync Engine
-- Unified `MultiplayerClient` interface cleanly decoupling game presentation from networking.
-- Real-time Firebase Realtime Database sync with monotonic sequence validation via `StateReconciler`.
-- **Connection Resilience**: 30-second disconnect grace period with automatic `DisconnectAiProxy` takeover so matches never freeze for remaining players.
-- **Floating Emotes & Quick Chat**: Ephemeral floating reaction emojis (`🔥`, `😂`, `👏`, `😭`, `🎯`, `👑`) and preset quick chats.
 
 ---
 

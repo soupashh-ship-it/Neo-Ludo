@@ -294,7 +294,7 @@ fun SettingsScreen(
             // App About Info
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text(text = "Neo Ludo v1.0.0", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "Neo Ludo v1.1.0", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "100% Ad-Free • Pure Play Multiplayer", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
                 }
             }
