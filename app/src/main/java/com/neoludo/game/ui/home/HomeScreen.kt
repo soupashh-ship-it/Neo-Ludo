@@ -2,6 +2,7 @@ package com.neoludo.game.ui.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -31,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
@@ -62,10 +65,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -73,12 +80,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.neoludo.game.core.designsystem.NeoLudoButton
-import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
 import com.neoludo.game.engine.ai.Difficulty
 import com.neoludo.game.engine.model.PlayerColor
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun HomeScreen(
@@ -109,9 +118,9 @@ fun HomeScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF090D16),
-                        Color(0xFF0D1424),
-                        Color(0xFF070B12)
+                        Color(0xFF070A12),
+                        Color(0xFF0C1322),
+                        Color(0xFF060910)
                     )
                 )
             )
@@ -123,15 +132,14 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(36.dp))
-                // 1. AAA Top Header with Avatar Persona & Dual Economy Trackers
-                AAAHomeHeader(
+                Spacer(modifier = Modifier.height(34.dp))
+                // 1. AAA Top Header with Gamer Persona, XP Bar & Currency Vaults
+                AAAGamingHeader(
                     profile = profile,
                     stats = stats,
                     coins = userCoins,
                     gems = userGems,
                     onProfileClick = onNavigateProfile,
-                    onLockerClick = onNavigateLocker,
                     onSettingsClick = onNavigateSettings,
                     onRulesClick = onNavigateRules
                 )
@@ -139,7 +147,7 @@ fun HomeScreen(
 
             item {
                 // 2. Featured Cinematic Hero Card — "PLAY ONLINE"
-                FeaturedHeroOnlineCard(
+                FeaturedCinematicHeroCard(
                     onClick = { showOnlineSetupDialog = true }
                 )
             }
@@ -150,15 +158,24 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 16.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(NeoLudoColors.AmberYellow)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "GAMEPLAY MODES",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.2.sp
+                        )
+                    }
                     Text(
-                        text = "GAME MODES",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.2.sp
-                    )
-                    Text(
-                        text = "2–4 PLAYERS",
+                        text = "MATCH TYPES",
                         color = NeoLudoColors.AmberYellow,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -167,8 +184,8 @@ fun HomeScreen(
             }
 
             item {
-                // 3. Polished 2x2 Interactive Game Modes Grid
-                GameModes2x2Grid(
+                // 3. Custom-Illustrated 2x2 Game Mode Grid (Friends Vault, Offline Arena, Cyber Bot AI, Skin Locker)
+                RichGameModes2x2Grid(
                     onPlayWithFriends = onNavigateFriends,
                     onPassAndPlay = { showLocalSetupDialog = true },
                     onVsComputer = { showAiSetupDialog = true },
@@ -178,7 +195,7 @@ fun HomeScreen(
 
             item {
                 // 4. Daily Quests & Fortune Chest Widget
-                DailyQuestsAndRewardsCard(
+                DailyQuestsAndFortuneCard(
                     dailyClaimed = dailyClaimed,
                     onClaimReward = {
                         if (!dailyClaimed) {
@@ -195,12 +212,12 @@ fun HomeScreen(
                     stats = stats,
                     onFriendsClick = onNavigateFriendsList
                 )
-                Spacer(modifier = Modifier.height(84.dp)) // Bottom padding for floating nav bar
+                Spacer(modifier = Modifier.height(84.dp))
             }
         }
 
-        // 6. Floating Bottom Navigation Bar
-        FloatingBottomNavBar(
+        // 6. Floating Glassmorphic Bottom Navigation Bar
+        FloatingGlassBottomNav(
             currentRoute = "play",
             onTabSelected = { route ->
                 when (route) {
@@ -213,7 +230,7 @@ fun HomeScreen(
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp, start = 20.dp, end = 20.dp)
+                .padding(bottom = 16.dp, start = 18.dp, end = 18.dp)
         )
 
         // Setup Dialogs
@@ -254,18 +271,16 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AAAHomeHeader(
+private fun AAAGamingHeader(
     profile: UserProfile,
     stats: UserStats,
     coins: Int,
     gems: Int,
     onProfileClick: () -> Unit,
-    onLockerClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onRulesClick: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Row 1: Profile Badge (Left) & Economy Trackers (Right)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -274,8 +289,8 @@ private fun AAAHomeHeader(
             // Profile Persona Capsule
             Surface(
                 shape = RoundedCornerShape(26.dp),
-                color = Color(0xFF131A29),
-                border = BorderStroke(1.5.dp, Color(0xFF283650)),
+                color = Color(0xFF111726),
+                border = BorderStroke(1.5.dp, Color(0xFF263550)),
                 modifier = Modifier
                     .clip(RoundedCornerShape(26.dp))
                     .clickable(onClick = onProfileClick)
@@ -288,14 +303,14 @@ private fun AAAHomeHeader(
                     Box(contentAlignment = Alignment.BottomEnd) {
                         Box(
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
                                         listOf(NeoLudoColors.CobaltBlue, NeoLudoColors.EmeraldGreen)
                                     )
                                 )
-                                .border(1.5.dp, Color(0xFFFFD54F), CircleShape),
+                                .border(2.dp, Color(0xFFFFD54F), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -305,10 +320,10 @@ private fun AAAHomeHeader(
                                 fontSize = 18.sp
                             )
                         }
-                        // LV Badge
                         Surface(
                             shape = CircleShape,
                             color = Color(0xFFFFD54F),
+                            border = BorderStroke(1.dp, Color.Black),
                             modifier = Modifier.size(16.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -340,8 +355,8 @@ private fun AAAHomeHeader(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "${stats.winRate.toInt()}% Win",
-                                color = NeoLudoColors.EmeraldGreen,
+                                text = "🔥 3 Streak",
+                                color = Color(0xFFFF7043),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -350,16 +365,16 @@ private fun AAAHomeHeader(
                 }
             }
 
-            // Economy Pills: Coins & Gems
+            // Currency Trackers
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Coins Pill
+                // Gold Coins Pill
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = Color(0xFF261D05),
-                    border = BorderStroke(1.5.dp, Color(0xFFFFD54F).copy(alpha = 0.8f))
+                    border = BorderStroke(1.5.dp, Color(0xFFFFD54F))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "🪙", fontSize = 13.sp)
@@ -377,10 +392,10 @@ private fun AAAHomeHeader(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = Color(0xFF0A223D),
-                    border = BorderStroke(1.5.dp, Color(0xFF00E5FF).copy(alpha = 0.8f))
+                    border = BorderStroke(1.5.dp, Color(0xFF00E5FF))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "💎", fontSize = 13.sp)
@@ -399,38 +414,37 @@ private fun AAAHomeHeader(
 }
 
 @Composable
-private fun FeaturedHeroOnlineCard(
+private fun FeaturedCinematicHeroCard(
     onClick: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "hero_shimmer")
-    val glowPulse by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1.0f,
+    val infiniteTransition = rememberInfiniteTransition(label = "hero_anim")
+    val pulseGlow by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation = tween(2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "glow_pulse"
+        label = "hero_pulse"
     )
 
     Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = Color.Transparent,
+        border = BorderStroke(2.dp, Color(0xFF2979FF).copy(alpha = pulseGlow)),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(26.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
-        color = Color.Transparent,
-        border = BorderStroke(2.dp, Color(0xFF2979FF).copy(alpha = glowPulse))
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
                         listOf(
-                            Color(0xFF0E2A5E),
+                            Color(0xFF0E2C66),
                             Color(0xFF0D1B36),
-                            Color(0xFF0A1224)
+                            Color(0xFF081122)
                         ),
                         start = Offset(0f, 0f),
                         end = Offset(1000f, 600f)
@@ -439,7 +453,6 @@ private fun FeaturedHeroOnlineCard(
                 .padding(20.dp)
         ) {
             Column {
-                // Top Tag Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -447,17 +460,17 @@ private fun FeaturedHeroOnlineCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF2979FF).copy(alpha = 0.25f),
+                        color = Color(0xFF2979FF).copy(alpha = 0.3f),
                         border = BorderStroke(1.dp, Color(0xFF2979FF))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD54F), modifier = Modifier.size(12.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "FEATURED MODE",
+                                text = "GLOBAL ARENA",
                                 color = Color.White,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black
@@ -465,14 +478,13 @@ private fun FeaturedHeroOnlineCard(
                         }
                     }
 
-                    // Live players online badge
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = Color(0xFF0D3823),
-                        border = BorderStroke(1.dp, NeoLudoColors.EmeraldGreen.copy(alpha = 0.6f))
+                        border = BorderStroke(1.dp, NeoLudoColors.EmeraldGreen.copy(alpha = 0.7f))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -483,7 +495,7 @@ private fun FeaturedHeroOnlineCard(
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = "4,820 LIVE",
+                                text = "4,820 ONLINE",
                                 color = NeoLudoColors.EmeraldGreen,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black
@@ -508,7 +520,7 @@ private fun FeaturedHeroOnlineCard(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Instant global matchmaking • 2 & 4 Player rooms",
+                            text = "Instant 2 & 4 Player matchmaking • Global ranking",
                             color = Color(0xFF90CAF9),
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -517,35 +529,39 @@ private fun FeaturedHeroOnlineCard(
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    // 3D Visual Graphic Mini Preview
+                    // Custom Vector 3D Isometric Ludo Dice Graphic
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(18.dp))
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.radialGradient(
-                                    listOf(Color(0xFF2979FF).copy(alpha = 0.4f), Color.Transparent),
-                                    radius = 100f
+                                    listOf(Color(0xFF2979FF).copy(alpha = 0.5f), Color.Transparent),
+                                    radius = 120f
                                 )
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(modifier = Modifier.size(52.dp)) {
+                        Canvas(modifier = Modifier.size(56.dp)) {
                             val w = size.width
                             val h = size.height
-                            // Red Die isometric
+                            // Isometric 3D Die
                             drawRoundRect(
-                                color = Color(0xFFE53935),
+                                brush = Brush.linearGradient(
+                                    listOf(Color(0xFFE53935), Color(0xFFC62828)),
+                                    start = Offset(0f, 0f),
+                                    end = Offset(w, h)
+                                ),
                                 topLeft = Offset(4f, 4f),
-                                size = androidx.compose.ui.geometry.Size(w - 8f, h - 8f),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(14f, 14f)
+                                size = Size(w - 8f, h - 8f),
+                                cornerRadius = CornerRadius(16f, 16f)
                             )
                             drawRoundRect(
                                 color = Color(0xFFFFD54F),
                                 topLeft = Offset(4f, 4f),
-                                size = androidx.compose.ui.geometry.Size(w - 8f, h - 8f),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(14f, 14f),
-                                style = Stroke(2f)
+                                size = Size(w - 8f, h - 8f),
+                                cornerRadius = CornerRadius(16f, 16f),
+                                style = Stroke(2.2f)
                             )
                             // 5 pips
                             val r = w * 0.08f
@@ -560,7 +576,7 @@ private fun FeaturedHeroOnlineCard(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Big Glowing Play CTA Button
+                // CTA Button
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color(0xFF2979FF),
@@ -596,64 +612,68 @@ private fun FeaturedHeroOnlineCard(
 }
 
 @Composable
-private fun GameModes2x2Grid(
+private fun RichGameModes2x2Grid(
     onPlayWithFriends: () -> Unit,
     onPassAndPlay: () -> Unit,
     onVsComputer: () -> Unit,
     onCosmeticsLocker: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Row 1: Friends Room & Pass and Play
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Row 1: Friends Vault & Pass and Play Offline Arena
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            ModeGridCard(
-                title = "Play with Friends",
-                subtitle = "Private Code Room",
+            // 1. Play with Friends (Custom Room Vault Art)
+            CustomModeCard(
+                title = "Friends Room",
+                subtitle = "Private 6-Code Lobby",
                 badge = "CUSTOM",
-                icon = Icons.Default.Group,
                 accentColor = NeoLudoColors.EmeraldGreen,
-                gradientColors = listOf(Color(0xFF0F3824), Color(0xFF091F14)),
+                gradientColors = listOf(Color(0xFF0F3824), Color(0xFF081C12)),
+                artType = ModeArtType.FRIENDS_VAULT,
                 onClick = onPlayWithFriends,
                 modifier = Modifier.weight(1f)
             )
 
-            ModeGridCard(
+            // 2. Pass & Play (Local Offline Arena Art)
+            CustomModeCard(
                 title = "Pass & Play",
-                subtitle = "2–4 Offline Players",
-                badge = "LOCAL",
-                icon = Icons.Default.SportsEsports,
+                subtitle = "2–4 Players • Offline",
+                badge = "NO WIFI",
                 accentColor = NeoLudoColors.AmberYellow,
-                gradientColors = listOf(Color(0xFF382E0A), Color(0xFF1F1A05)),
+                gradientColors = listOf(Color(0xFF382E0A), Color(0xFF1C1705)),
+                artType = ModeArtType.OFFLINE_BOARD,
                 onClick = onPassAndPlay,
                 modifier = Modifier.weight(1f)
             )
         }
 
-        // Row 2: Vs Computer & Cosmetics Locker
+        // Row 2: Vs Computer AI & Cosmetics Locker
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            ModeGridCard(
+            // 3. Vs Computer (Cyber AI Mastermind Art)
+            CustomModeCard(
                 title = "Vs Computer",
                 subtitle = "3 Smart AI Tiers",
                 badge = "SOLO BOT",
-                icon = Icons.Default.SmartToy,
                 accentColor = NeoLudoColors.RubyRed,
-                gradientColors = listOf(Color(0xFF3D1120), Color(0xFF210912)),
+                gradientColors = listOf(Color(0xFF3D1120), Color(0xFF1F0810)),
+                artType = ModeArtType.CYBER_ROBOT,
                 onClick = onVsComputer,
                 modifier = Modifier.weight(1f)
             )
 
-            ModeGridCard(
-                title = "Cosmetics Locker",
-                subtitle = "Themes, Dice & Pawns",
-                badge = "VAULT",
-                icon = Icons.Default.Palette,
+            // 4. Cosmetics Locker (Skin Vault Art)
+            CustomModeCard(
+                title = "Locker Vault",
+                subtitle = "5 Themes • 5 Dice",
+                badge = "SKINS",
                 accentColor = Color(0xFFFF007F),
-                gradientColors = listOf(Color(0xFF360D2D), Color(0xFF1F071A)),
+                gradientColors = listOf(Color(0xFF380D2E), Color(0xFF1C0617)),
+                artType = ModeArtType.SKIN_VAULT,
                 onClick = onCosmeticsLocker,
                 modifier = Modifier.weight(1f)
             )
@@ -661,63 +681,76 @@ private fun GameModes2x2Grid(
     }
 }
 
+private enum class ModeArtType {
+    FRIENDS_VAULT,
+    OFFLINE_BOARD,
+    CYBER_ROBOT,
+    SKIN_VAULT
+}
+
 @Composable
-private fun ModeGridCard(
+private fun CustomModeCard(
     title: String,
     subtitle: String,
     badge: String,
-    icon: ImageVector,
     accentColor: Color,
     gradientColors: List<Color>,
+    artType: ModeArtType,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Nested Double-Bezel Hardware Card Architecture
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(24.dp),
         color = Color.Transparent,
-        border = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.45f)),
+        border = BorderStroke(1.8.dp, accentColor.copy(alpha = 0.5f)),
         modifier = modifier
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(24.dp))
             .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
                 .background(Brush.verticalGradient(gradientColors))
-                .padding(16.dp)
+                .padding(14.dp)
         ) {
             Column {
+                // Top Row: Custom Canvas Mode Art & Badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
+                    // Custom Canvas Vector Art
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .background(accentColor.copy(alpha = 0.2f))
-                            .border(1.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
+                            .border(1.2.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = accentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Canvas(modifier = Modifier.size(38.dp)) {
+                            when (artType) {
+                                ModeArtType.FRIENDS_VAULT -> drawFriendsVaultArt(size.width, size.height, accentColor)
+                                ModeArtType.OFFLINE_BOARD -> drawOfflineBoardArt(size.width, size.height, accentColor)
+                                ModeArtType.CYBER_ROBOT -> drawCyberRobotArt(size.width, size.height, accentColor)
+                                ModeArtType.SKIN_VAULT -> drawSkinVaultArt(size.width, size.height, accentColor)
+                            }
+                        }
                     }
 
+                    // Badge
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = accentColor.copy(alpha = 0.25f),
-                        border = BorderStroke(0.5.dp, accentColor)
+                        border = BorderStroke(0.8.dp, accentColor)
                     ) {
                         Text(
                             text = badge,
                             color = accentColor,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                         )
                     }
                 }
@@ -737,20 +770,114 @@ private fun ModeGridCard(
                     fontSize = 11.sp,
                     lineHeight = 14.sp
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Action Pill Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "PLAY",
+                        color = accentColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
     }
 }
 
+// 1. Friends Room Art: Duo Map Pins with Golden Key & Sparkling Radiance
+private fun DrawScope.drawFriendsVaultArt(w: Float, h: Float, accentColor: Color) {
+    // Left Red Pin
+    drawCircle(Color(0xFFE53935), w * 0.22f, Offset(w * 0.35f, h * 0.42f))
+    drawCircle(Color.White, w * 0.1f, Offset(w * 0.35f, h * 0.42f))
+    // Right Green Pin
+    drawCircle(Color(0xFF43A047), w * 0.22f, Offset(w * 0.65f, h * 0.42f))
+    drawCircle(Color.White, w * 0.1f, Offset(w * 0.65f, h * 0.42f))
+    // Center Golden Key
+    drawCircle(Color(0xFFFFD54F), w * 0.16f, Offset(w * 0.5f, h * 0.72f), style = Stroke(2.5f))
+    drawLine(Color(0xFFFFD54F), Offset(w * 0.5f, h * 0.72f), Offset(w * 0.8f, h * 0.72f), strokeWidth = 2.5f)
+}
+
+// 2. Offline Board Art: 4-Corner Miniature Ludo Board with Tokens
+private fun DrawScope.drawOfflineBoardArt(w: Float, h: Float, accentColor: Color) {
+    // Mini Wood Board
+    drawRoundRect(
+        color = Color(0xFF5D4037),
+        topLeft = Offset(w * 0.1f, h * 0.1f),
+        size = Size(w * 0.8f, h * 0.8f),
+        cornerRadius = CornerRadius(6f, 6f)
+    )
+    drawRoundRect(
+        color = Color(0xFFFFF9C4),
+        topLeft = Offset(w * 0.18f, h * 0.18f),
+        size = Size(w * 0.64f, h * 0.64f),
+        cornerRadius = CornerRadius(4f, 4f)
+    )
+    // 4 Corner Pawns
+    drawCircle(Color(0xFFE53935), w * 0.09f, Offset(w * 0.3f, h * 0.3f))
+    drawCircle(Color(0xFF43A047), w * 0.09f, Offset(w * 0.7f, h * 0.3f))
+    drawCircle(Color(0xFF00A0E9), w * 0.09f, Offset(w * 0.3f, h * 0.7f))
+    drawCircle(Color(0xFFFDD835), w * 0.09f, Offset(w * 0.7f, h * 0.7f))
+}
+
+// 3. Cyber Robot AI Art: Futuristic Robot Visor & Mechanical Pawn
+private fun DrawScope.drawCyberRobotArt(w: Float, h: Float, accentColor: Color) {
+    // Robot head
+    drawRoundRect(
+        color = Color(0xFFE53935),
+        topLeft = Offset(w * 0.2f, h * 0.25f),
+        size = Size(w * 0.6f, h * 0.5f),
+        cornerRadius = CornerRadius(8f, 8f)
+    )
+    // Cyan Visor
+    drawRoundRect(
+        color = Color(0xFF00F0FF),
+        topLeft = Offset(w * 0.28f, h * 0.38f),
+        size = Size(w * 0.44f, h * 0.16f),
+        cornerRadius = CornerRadius(4f, 4f)
+    )
+    // Antenna
+    drawLine(Color.White, Offset(w * 0.5f, h * 0.25f), Offset(w * 0.5f, h * 0.1f), strokeWidth = 2.5f)
+    drawCircle(Color(0xFFFFD54F), w * 0.08f, Offset(w * 0.5f, h * 0.1f))
+}
+
+// 4. Skin Vault Art: Glowing Crystal Gem & Floating Die
+private fun DrawScope.drawSkinVaultArt(w: Float, h: Float, accentColor: Color) {
+    // Faceted Crystal Gem Path
+    val path = Path().apply {
+        moveTo(w * 0.5f, h * 0.15f)
+        lineTo(w * 0.82f, h * 0.42f)
+        lineTo(w * 0.5f, h * 0.85f)
+        lineTo(w * 0.18f, h * 0.42f)
+        close()
+    }
+    drawPath(path, Brush.radialGradient(listOf(Color(0xFFFF007F), Color(0xFF7B1FA2)), center = Offset(w * 0.5f, h * 0.5f)))
+    drawPath(path, Color.White, style = Stroke(1.8f))
+    drawCircle(Color.White, w * 0.08f, Offset(w * 0.5f, h * 0.45f))
+}
+
 @Composable
-private fun DailyQuestsAndRewardsCard(
+private fun DailyQuestsAndFortuneCard(
     dailyClaimed: Boolean,
     onClaimReward: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF111726),
-        border = BorderStroke(1.dp, Color(0xFF23304A)),
+        color = Color(0xFF101626),
+        border = BorderStroke(1.2.dp, Color(0xFF24324E)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -768,7 +895,7 @@ private fun DailyQuestsAndRewardsCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "DAILY QUESTS & FORTUNE",
+                        text = "DAILY QUESTS & CHEST",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Black,
@@ -786,7 +913,7 @@ private fun DailyQuestsAndRewardsCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Quest 1
-            QuestRow(
+            QuestRowItem(
                 title = "Roll a 6 in Match",
                 progressText = "3 / 5",
                 progressFraction = 0.6f,
@@ -796,7 +923,7 @@ private fun DailyQuestsAndRewardsCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Quest 2
-            QuestRow(
+            QuestRowItem(
                 title = "Capture 2 Opponent Pawns",
                 progressText = "1 / 2",
                 progressFraction = 0.5f,
@@ -808,8 +935,8 @@ private fun DailyQuestsAndRewardsCard(
             // Daily Free Reward Button
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = if (dailyClaimed) Color(0xFF1E283D) else Color(0xFF0D3823),
-                border = BorderStroke(1.dp, if (dailyClaimed) Color(0xFF324263) else NeoLudoColors.EmeraldGreen),
+                color = if (dailyClaimed) Color(0xFF1C2438) else Color(0xFF0D3823),
+                border = BorderStroke(1.2.dp, if (dailyClaimed) Color(0xFF2E3D5C) else NeoLudoColors.EmeraldGreen),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
@@ -818,14 +945,14 @@ private fun DailyQuestsAndRewardsCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 11.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (dailyClaimed) "✅ DAILY CHEST CLAIMED" else "🎁 CLAIM FREE 500 COINS",
                         color = if (dailyClaimed) NeoLudoColors.ObsidianTextSecondary else NeoLudoColors.EmeraldGreen,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Black,
                         fontSize = 12.sp
                     )
                 }
@@ -835,7 +962,7 @@ private fun DailyQuestsAndRewardsCard(
 }
 
 @Composable
-private fun QuestRow(
+private fun QuestRowItem(
     title: String,
     progressText: String,
     progressFraction: Float,
@@ -897,8 +1024,8 @@ private fun CareerShowcaseCard(
 ) {
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF111726),
-        border = BorderStroke(1.dp, Color(0xFF23304A)),
+        color = Color(0xFF101626),
+        border = BorderStroke(1.2.dp, Color(0xFF24324E)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -941,23 +1068,23 @@ private fun CareerShowcaseCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 4 Key Stats
+            // 4 KPI Columns
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                CareerStatColumn(label = "Matches", value = stats.totalMatches.toString(), accent = Color.White)
-                CareerStatColumn(label = "Victories", value = stats.totalWins.toString(), accent = NeoLudoColors.EmeraldGreen)
-                CareerStatColumn(label = "Captures", value = stats.totalCaptures.toString(), accent = NeoLudoColors.RubyRed)
-                CareerStatColumn(label = "Sixes", value = stats.totalSixes.toString(), accent = NeoLudoColors.AmberYellow)
+                StatColumn(label = "Matches", value = stats.totalMatches.toString(), accent = Color.White)
+                StatColumn(label = "Victories", value = stats.totalWins.toString(), accent = NeoLudoColors.EmeraldGreen)
+                StatColumn(label = "Captures", value = stats.totalCaptures.toString(), accent = NeoLudoColors.RubyRed)
+                StatColumn(label = "Sixes", value = stats.totalSixes.toString(), accent = NeoLudoColors.AmberYellow)
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Friends Action Row
+            // Friends Quick Action Launcher
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF182236),
+                color = Color(0xFF172034),
                 border = BorderStroke(1.dp, Color(0xFF283A5A)),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1000,7 +1127,7 @@ private fun CareerShowcaseCard(
 }
 
 @Composable
-private fun CareerStatColumn(label: String, value: String, accent: Color) {
+private fun StatColumn(label: String, value: String, accent: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -1018,16 +1145,16 @@ private fun CareerStatColumn(label: String, value: String, accent: Color) {
 }
 
 @Composable
-private fun FloatingBottomNavBar(
+private fun FloatingGlassBottomNav(
     currentRoute: String,
     onTabSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = Color(0xE6101626), // Glassmorphic dark navy
-        border = BorderStroke(1.5.dp, Color(0xFF283652)),
-        shadowElevation = 12.dp,
+        color = Color(0xE8101728),
+        border = BorderStroke(1.5.dp, Color(0xFF283856)),
+        shadowElevation = 14.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -1037,7 +1164,7 @@ private fun FloatingBottomNavBar(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BottomNavItem(
+            GlassNavItem(
                 label = "Play",
                 icon = Icons.Default.SportsEsports,
                 isSelected = currentRoute == "play",
@@ -1045,7 +1172,7 @@ private fun FloatingBottomNavBar(
                 onClick = { onTabSelected("play") }
             )
 
-            BottomNavItem(
+            GlassNavItem(
                 label = "Locker",
                 icon = Icons.Default.Palette,
                 isSelected = currentRoute == "locker",
@@ -1053,7 +1180,7 @@ private fun FloatingBottomNavBar(
                 onClick = { onTabSelected("locker") }
             )
 
-            BottomNavItem(
+            GlassNavItem(
                 label = "Friends",
                 icon = Icons.Default.Group,
                 isSelected = currentRoute == "friends",
@@ -1061,7 +1188,7 @@ private fun FloatingBottomNavBar(
                 onClick = { onTabSelected("friends") }
             )
 
-            BottomNavItem(
+            GlassNavItem(
                 label = "Rules",
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 isSelected = currentRoute == "rules",
@@ -1069,7 +1196,7 @@ private fun FloatingBottomNavBar(
                 onClick = { onTabSelected("rules") }
             )
 
-            BottomNavItem(
+            GlassNavItem(
                 label = "Settings",
                 icon = Icons.Default.Settings,
                 isSelected = currentRoute == "settings",
@@ -1081,7 +1208,7 @@ private fun FloatingBottomNavBar(
 }
 
 @Composable
-private fun BottomNavItem(
+private fun GlassNavItem(
     label: String,
     icon: ImageVector,
     isSelected: Boolean,
@@ -1134,7 +1261,6 @@ private fun VsComputerSetupDialog(
                 modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1249,7 +1375,7 @@ private fun VsComputerSetupDialog(
                             Text(
                                 text = "$count Players",
                                 color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
                         }
@@ -1317,7 +1443,6 @@ private fun VsComputerSetupDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Start Button
                 NeoLudoButton(
                     text = "START MATCH",
                     onClick = { onStartGame(selectedDifficulty, selectedPlayerCount, selectedColor) },

@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.4.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.4.0.apk)**
+🔗 **[Download NeoLudo-v1.5.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.5.0.apk)**
 
 ---
 
@@ -61,12 +61,14 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
   - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
   - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
   - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
-- **2026 AAA Game Hub Home Interface**:
-  - **Header Persona & Dual Economy Trackers**: Level badges (`LV.24`), player title badges, win-rate indicators, Gold Coins counter (🪙 `25,400`), and Gem Diamonds (💎 `120`).
-  - **Featured Hero Card (Play Online)**: High-impact hero banner with live matchmaking indicators (`🟢 4,820 LIVE`), 3D dice graphic preview, and instant play CTA.
-  - **2x2 Interactive Game Modes Grid**: Tactile expressive cards for *Play with Friends*, *Pass & Play*, *Vs Computer*, and *Cosmetics Locker*.
-  - **Daily Quests & Fortune Rewards**: Quest progress bars (coins & gem rewards) with claimable daily fortune chest.
-  - **Floating Glassmorphic Bottom Navigation**: 5-tab floating pill bar (`Play`, `Locker`, `Friends`, `Rules`, `Settings`).
+- **2026 AAA Game Hub with Custom Vector Game Art**:
+  - **Play with Friends (Vault Art)**: Duo player map pins with golden key, sparkle aura, and private room lobby badge.
+  - **Pass & Play (Arena Art)**: 4-corner miniature wooden Ludo board with 4 colored tokens and offline badge.
+  - **Vs Computer (Cyber AI Art)**: Futuristic mechanical robot pawn with cyan holographic visor and difficulty tiers.
+  - **Cosmetics Locker (Skin Vault Art)**: Faceted crystal gem & 3D floating dice vault.
+  - **Header Persona & Dual Economy**: Level badge (`LV.24`), win streak badge (`🔥 3 Streak`), Gold Coins (🪙 `25,400`), and Gems (💎 `120`).
+  - **Daily Quests & Fortune Chest**: Interactive daily quests with progress bars and free daily reward chest.
+  - **Floating Glassmorphic Bottom Nav**: 5-tab floating pill bar (`Play`, `Locker`, `Friends`, `Rules`, `Settings`).
   - **Confetti Celebration & 3-Tier Victory Podium**: Post-match ceremony with falling confetti particles.
 - **Career Hub & Match History**:
   - 16 selectable avatar badges & player title badges (`Grandmaster`, `Dice Sorcerer`, `Board Conqueror`, `Pawn Crusher`, `Casual Roller`, `Speed Demon`).
