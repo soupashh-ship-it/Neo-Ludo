@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.6.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.6.0.apk)**
+🔗 **[Download NeoLudo-v1.7.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.7.0.apk)**
 
 ---
 
@@ -61,13 +61,11 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
   - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
   - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
   - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
-- **Universal Cross-Network Friends Multiplayer**:
-  - **Internet-Wide Cloud Sync**: Play with friends seamlessly even on completely different networks (e.g. 4G/5G, Home WiFi, Office WiFi across different cities/countries).
-  - **Instant 6-Character Room Codes (`NL-XXXX`)**: Create private rooms, share invite links, and join via code.
-  - **Live Dynamic Lobby**: Real-time player presence updates, assigned player colors, and host controls.
-  - **Automatic AI Filler Bots**: Matches with fewer players automatically fill empty slots with intelligent AI bots so the match is always 100% playable.
-  - **Real-Time Game State Broadcast**: Synchronized dice rolls, piece moves, captures, bonus turns, and floating reaction emojis.
-- **2026 AAA Game Hub with Custom Vector Game Art**:
+- **Smooth Visual State Animation Engine & Zero-Glitch Piece Movement**:
+  - **Visual-Engine State Decoupling**: Board rendering now tracks in-progress visual positions (`visualPositions`) independently of future raw engine state, eliminating position snapping and piece teleporting.
+  - **Glitch-Free Multi-Piece Clustering**: Other players' tokens on origin and destination cells remain rock-solid in place without jittering or shifting while a piece is mid-animation.
+  - **Delayed Capture Transition**: Captured enemy pieces remain on their tile until the moving piece physically lands on them, at which point the capture shockwave plays and the token smoothly returns to the yard.
+  - **Parabolic Jump & Yard Lift Physics**: Dedicated high-arc lift when exiting the yard and rhythmic single-cell hops along the board path.
   - **Play with Friends (Vault Art)**: Duo player map pins with golden key, sparkle aura, and private room lobby badge.
   - **Pass & Play (Arena Art)**: 4-corner miniature wooden Ludo board with 4 colored tokens and offline badge.
   - **Vs Computer (Cyber AI Art)**: Futuristic mechanical robot pawn with cyan holographic visor and difficulty tiers.

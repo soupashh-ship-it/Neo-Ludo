@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -114,83 +115,118 @@ fun CanvasLudoBoard(
     // Animation tracking for step-by-step hopping
     var activeHop by remember { mutableStateOf<ActivePieceHopState?>(null) }
     val stepAnimProgress = remember { Animatable(0f) }
-    var lastPiecePositions by remember {
-        mutableStateOf(
-            gameState.players.flatMap { p -> p.pieces.map { "${p.color}_${it.id}" to it.position } }.toMap()
-        )
+
+    // Persistent visual positions (tracks visual location of every piece on board)
+    val visualPositions = remember {
+        mutableStateMapOf<String, PiecePosition>().apply {
+            gameState.players.forEach { p ->
+                p.pieces.forEach { piece ->
+                    put("${p.color}_${piece.id}", piece.position)
+                }
+            }
+        }
     }
 
     // Active particles (shockwaves and starbursts)
     val activeParticles = remember { mutableStateListOf<BoardVisualParticle>() }
 
     LaunchedEffect(gameState) {
-        val currentPositions = gameState.players.flatMap { p -> p.pieces.map { "${p.color}_${it.id}" to it.position } }.toMap()
+        val currentEnginePositions = gameState.players.flatMap { p -> p.pieces.map { "${p.color}_${it.id}" to it.position } }.toMap()
+
+        // 1. Check which piece moved
+        var movingPieceInfo: Triple<PlayerColor, Piece, PiecePosition>? = null
         for (player in gameState.players) {
             for (piece in player.pieces) {
                 val key = "${player.color}_${piece.id}"
-                val oldPos = lastPiecePositions[key]
-                val newPos = piece.position
-                if (oldPos != null && oldPos != newPos) {
-                    // Check if piece just arrived home
-                    if (newPos is PiecePosition.Home) {
-                        val particleId = System.currentTimeMillis() + piece.id * 100 + player.color.ordinal
-                        val anim = Animatable(0f)
-                        val p = BoardVisualParticle(
-                            id = particleId,
-                            center = Offset.Zero, // Calculated in draw pass
-                            color = palette.starSafeColor,
-                            isShockwave = false,
-                            progress = anim
-                        )
-                        activeParticles.add(p)
-                        launch {
-                            anim.animateTo(1f, tween(650, easing = LinearOutSlowInEasing))
-                            activeParticles.remove(p)
-                        }
-                    }
-                    // Check if piece was captured (was on path, now in yard)
-                    if (oldPos is PiecePosition.Path && newPos is PiecePosition.Yard) {
-                        val (r, c) = BoardCoordinates.getGridCoordForPosition(player.color, oldPos)
-                        val particleId = System.currentTimeMillis() + piece.id * 100 + player.color.ordinal
-                        val anim = Animatable(0f)
-                        val p = BoardVisualParticle(
-                            id = particleId,
-                            center = Offset(c, r), // grid col/row marker
-                            color = NeoLudoColors.getPlayerColor(player.color, boardTheme),
-                            isShockwave = true,
-                            progress = anim
-                        )
-                        activeParticles.add(p)
-                        launch {
-                            anim.animateTo(1f, tween(500, easing = LinearOutSlowInEasing))
-                            activeParticles.remove(p)
-                        }
-                    }
-
-                    val intermediate = BoardCoordinates.getIntermediatePositions(player.color, oldPos, newPos)
-                    if (intermediate.size > 1) {
-                        // Animate tile by tile only for this moving piece
-                        for (i in 0 until intermediate.size - 1) {
-                            activeHop = ActivePieceHopState(
-                                playerColor = player.color,
-                                pieceId = piece.id,
-                                steps = intermediate,
-                                currentStepIndex = i,
-                                progress = 0f
-                            )
-                            onStepHop()
-                            stepAnimProgress.snapTo(0f)
-                            stepAnimProgress.animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(125, easing = LinearOutSlowInEasing)
-                            )
-                        }
-                        activeHop = null
-                    }
+                val currentVisualPos = visualPositions[key] ?: piece.position
+                val engineTargetPos = piece.position
+                if (currentVisualPos != engineTargetPos) {
+                    movingPieceInfo = Triple(player.color, piece, currentVisualPos)
+                    break
                 }
             }
+            if (movingPieceInfo != null) break
         }
-        lastPiecePositions = currentPositions
+
+        if (movingPieceInfo != null) {
+            val (moverColor, moverPiece, fromPos) = movingPieceInfo
+            val toPos = moverPiece.position
+            val moverKey = "${moverColor}_${moverPiece.id}"
+
+            val intermediateSteps = BoardCoordinates.getIntermediatePositions(moverColor, fromPos, toPos)
+            if (intermediateSteps.size > 1) {
+                for (i in 0 until intermediateSteps.size - 1) {
+                    activeHop = ActivePieceHopState(
+                        playerColor = moverColor,
+                        pieceId = moverPiece.id,
+                        steps = intermediateSteps,
+                        currentStepIndex = i,
+                        progress = 0f
+                    )
+                    onStepHop()
+                    stepAnimProgress.snapTo(0f)
+                    val isYardExit = fromPos is PiecePosition.Yard
+                    val stepDuration = if (isYardExit) 180 else 115
+                    stepAnimProgress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(stepDuration, easing = LinearOutSlowInEasing)
+                    )
+                    // Update visual position step-by-step
+                    val nextStepPos = intermediateSteps[i + 1]
+                    visualPositions[moverKey] = nextStepPos
+                }
+                activeHop = null
+            }
+
+            // After move completes, check for capture shockwave & home arrival
+            if (toPos is PiecePosition.Home) {
+                val particleId = System.currentTimeMillis() + moverPiece.id * 100 + moverColor.ordinal
+                val anim = Animatable(0f)
+                val p = BoardVisualParticle(
+                    id = particleId,
+                    center = Offset.Zero, // Calculated in draw pass
+                    color = palette.starSafeColor,
+                    isShockwave = false,
+                    progress = anim
+                )
+                activeParticles.add(p)
+                launch {
+                    anim.animateTo(1f, tween(650, easing = LinearOutSlowInEasing))
+                    activeParticles.remove(p)
+                }
+            }
+
+            // Sync all visual positions to engine positions (captured enemy pieces return to yard now)
+            currentEnginePositions.forEach { (k, targetPos) ->
+                val prevVisual = visualPositions[k]
+                if (prevVisual is PiecePosition.Path && targetPos is PiecePosition.Yard && k != moverKey) {
+                    // Captured piece: trigger shockwave at capture tile
+                    val parts = k.split("_")
+                    val capColor = runCatching { PlayerColor.valueOf(parts[0]) }.getOrDefault(PlayerColor.RED)
+                    val (r, c) = BoardCoordinates.getGridCoordForPosition(capColor, prevVisual)
+                    val particleId = System.currentTimeMillis() + targetPos.slot * 100 + capColor.ordinal
+                    val anim = Animatable(0f)
+                    val p = BoardVisualParticle(
+                        id = particleId,
+                        center = Offset(c, r), // grid col/row marker
+                        color = NeoLudoColors.getPlayerColor(capColor, boardTheme),
+                        isShockwave = true,
+                        progress = anim
+                    )
+                    activeParticles.add(p)
+                    launch {
+                        anim.animateTo(1f, tween(500, easing = LinearOutSlowInEasing))
+                        activeParticles.remove(p)
+                    }
+                }
+                visualPositions[k] = targetPos
+            }
+        } else {
+            // No movement: sync visual positions directly
+            currentEnginePositions.forEach { (k, v) ->
+                visualPositions[k] = v
+            }
+        }
     }
 
     Box(modifier = modifier.aspectRatio(1f)) {
@@ -209,6 +245,7 @@ fun CanvasLudoBoard(
                             touchY = offset.y,
                             cellSize = cellSize,
                             gameState = gameState,
+                            visualPositions = visualPositions,
                             selectablePieceIds = selectablePieceIds
                         )
                         if (touchedPiece != null && touchedPiece.id in selectablePieceIds) {
@@ -235,6 +272,7 @@ fun CanvasLudoBoard(
             // 5. Draw Stationary Pieces
             drawAllStationaryPieces(
                 gameState = gameState,
+                visualPositions = visualPositions,
                 cellSize = cellSize,
                 selectablePieceIds = selectablePieceIds,
                 activeHop = activeHop,
@@ -632,6 +670,7 @@ private fun DrawScope.drawRotatedStarIcon(
 
 private fun DrawScope.drawAllStationaryPieces(
     gameState: GameState,
+    visualPositions: Map<String, PiecePosition>,
     cellSize: Float,
     selectablePieceIds: Set<Int>,
     activeHop: ActivePieceHopState?,
@@ -642,7 +681,11 @@ private fun DrawScope.drawAllStationaryPieces(
     val allPieces = gameState.players.flatMap { player ->
         player.pieces
             .filterNot { activeHop != null && activeHop.playerColor == player.color && activeHop.pieceId == it.id }
-            .map { piece -> Triple(player, piece, BoardCoordinates.getGridCoordForPosition(player.color, piece.position)) }
+            .map { piece ->
+                val key = "${player.color}_${piece.id}"
+                val currentVisualPos = visualPositions[key] ?: piece.position
+                Triple(player, piece, BoardCoordinates.getGridCoordForPosition(player.color, currentVisualPos))
+            }
     }
 
     val groupedByCoord = allPieces.groupBy { it.third }
@@ -697,6 +740,8 @@ private fun DrawScope.drawHoppingPiece(
     val stepFrom = hopState.steps.getOrNull(hopState.currentStepIndex) ?: return
     val stepTo = hopState.steps.getOrNull(hopState.currentStepIndex + 1) ?: stepFrom
 
+    val isYardExit = stepFrom is PiecePosition.Yard
+
     val (rFrom, cFrom) = BoardCoordinates.getGridCoordForPosition(hopState.playerColor, stepFrom)
     val (rTo, cTo) = BoardCoordinates.getGridCoordForPosition(hopState.playerColor, stepTo)
 
@@ -709,11 +754,12 @@ private fun DrawScope.drawHoppingPiece(
     )
 
     // Parabolic vertical jump arc: max jump height at progress = 0.5
-    val jumpArc = -(sin(stepProgress * PI) * (cellSize * 0.5f)).toFloat()
+    val jumpArcHeight = if (isYardExit) cellSize * 0.85f else cellSize * 0.45f
+    val jumpArc = -(sin(stepProgress * PI) * jumpArcHeight).toFloat()
     val animatedCenter = Offset(baseCenter.x, baseCenter.y + jumpArc)
 
     // Scale bounce during jump
-    val scale = 1.0f + (sin(stepProgress * PI) * 0.28f).toFloat()
+    val scale = 1.0f + (sin(stepProgress * PI) * (if (isYardExit) 0.35f else 0.22f)).toFloat()
     val baseRadius = cellSize * 0.36f
     val pieceRadius = baseRadius * scale
 
@@ -743,7 +789,6 @@ private fun DrawScope.drawHoppingPiece(
         pawnSkin = pawnSkin
     )
 }
-
 private fun DrawScope.drawSinglePiece(
     center: Offset,
     radius: Float,
@@ -842,7 +887,6 @@ private fun DrawScope.drawSinglePiece(
                 color = Color(0xFF263238),
                 style = Stroke(width = 2.2f)
             )
-
             // 3. Saturated Colored Inner Core Circle
             val coreRadius = radius * 0.42f
             drawCircle(
@@ -1030,6 +1074,7 @@ private fun findTouchedPiece(
     touchY: Float,
     cellSize: Float,
     gameState: GameState,
+    visualPositions: Map<String, PiecePosition>,
     selectablePieceIds: Set<Int>
 ): Piece? {
     if (selectablePieceIds.isEmpty()) return null
@@ -1037,11 +1082,13 @@ private fun findTouchedPiece(
     val activePlayer = gameState.activePlayer
     var closestPiece: Piece? = null
     var minDistance = Float.MAX_VALUE
-    val maxTouchRadius = cellSize * 0.9f
+    val maxTouchRadius = cellSize * 0.95f
 
     for (piece in activePlayer.pieces) {
         if (piece.id !in selectablePieceIds) continue
-        val (row, col) = BoardCoordinates.getGridCoordForPosition(activePlayer.color, piece.position)
+        val key = "${activePlayer.color}_${piece.id}"
+        val currentVisualPos = visualPositions[key] ?: piece.position
+        val (row, col) = BoardCoordinates.getGridCoordForPosition(activePlayer.color, currentVisualPos)
         val pieceCenterX = col * cellSize + cellSize / 2f
         val pieceCenterY = row * cellSize + cellSize / 2f
 
