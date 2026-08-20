@@ -4,7 +4,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -73,7 +75,7 @@ fun NeoLudoNavHost(
     val profile by app.profileRepository.profile.collectAsState(initial = UserProfile())
     val stats by app.statsRepository.stats.collectAsState(initial = UserStats())
     val settings by app.settingsRepository.settings.collectAsState(initial = GameSettings())
-
+    var activeOnlineClient by remember { mutableStateOf<FirebaseMultiplayerClient?>(null) }
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route,
@@ -116,8 +118,26 @@ fun NeoLudoNavHost(
 
         composable(Screen.CreateRoom.route) {
             CreateRoomScreen(
-                onRoomCreated = { roomId ->
-                    navController.navigate(Screen.Lobby.createRoute(roomId))
+                onRoomCreated = { roomId, count, color ->
+                    val client = FirebaseMultiplayerClient(
+                        localPlayerId = profile.id,
+                        localPlayerName = profile.displayName,
+                        localAvatarId = profile.avatarId,
+                        preferredColor = color,
+                        initialRoomId = roomId,
+                        maxPlayers = count,
+                        ruleSet = LudoRuleSet(
+                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
+                            penalty3xSix = settings.penalty3xSix,
+                            turnTimerSeconds = settings.turnTimerSeconds
+                        ),
+                        autoStartMatch = false
+                    )
+                    coroutineScope.launch {
+                        client.createRoom(count)
+                        activeOnlineClient = client
+                        navController.navigate(Screen.Lobby.createRoute(roomId))
+                    }
                 },
                 onNavigateJoin = {
                     navController.navigate(Screen.JoinRoom.route)
@@ -129,7 +149,24 @@ fun NeoLudoNavHost(
         composable(Screen.JoinRoom.route) {
             JoinRoomScreen(
                 onJoinSuccess = { roomId ->
-                    navController.navigate(Screen.Lobby.createRoute(roomId))
+                    val client = FirebaseMultiplayerClient(
+                        localPlayerId = profile.id,
+                        localPlayerName = profile.displayName,
+                        localAvatarId = profile.avatarId,
+                        initialRoomId = roomId,
+                        maxPlayers = 4,
+                        ruleSet = LudoRuleSet(
+                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
+                            penalty3xSix = settings.penalty3xSix,
+                            turnTimerSeconds = settings.turnTimerSeconds
+                        ),
+                        autoStartMatch = false
+                    )
+                    coroutineScope.launch {
+                        client.joinRoom(roomId)
+                        activeOnlineClient = client
+                        navController.navigate(Screen.Lobby.createRoute(roomId))
+                    }
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -140,10 +177,27 @@ fun NeoLudoNavHost(
             arguments = listOf(navArgument("roomId") { type = NavType.StringType })
         ) { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: "NL-1234"
+            val client = activeOnlineClient ?: remember(roomId) {
+                FirebaseMultiplayerClient(
+                    localPlayerId = profile.id,
+                    localPlayerName = profile.displayName,
+                    localAvatarId = profile.avatarId,
+                    initialRoomId = roomId,
+                    maxPlayers = 4,
+                    ruleSet = LudoRuleSet(
+                        autoMoveSinglePiece = settings.autoMoveSinglePiece,
+                        penalty3xSix = settings.penalty3xSix,
+                        turnTimerSeconds = settings.turnTimerSeconds
+                    ),
+                    autoStartMatch = false
+                )
+            }
             LobbyWaitingRoomScreen(
                 roomId = roomId,
+                client = client,
+                localPlayerId = profile.id,
                 onStartGame = {
-                    navController.navigate(Screen.Game.createRoute("ONLINE", roomId, 4, "NORMAL", "RED")) {
+                    navController.navigate(Screen.Game.createRoute("ONLINE", roomId, client.maxPlayers, "NORMAL", client.preferredColor.name)) {
                         popUpTo(Screen.Home.route)
                     }
                 },
@@ -183,7 +237,7 @@ fun NeoLudoNavHost(
                             turnTimerSeconds = settings.turnTimerSeconds
                         )
                     )
-                    "ONLINE" -> FirebaseMultiplayerClient(
+                    "ONLINE" -> activeOnlineClient ?: FirebaseMultiplayerClient(
                         localPlayerId = profile.id,
                         localPlayerName = profile.displayName,
                         localAvatarId = profile.avatarId,

@@ -47,7 +47,7 @@ import com.neoludo.game.engine.model.PlayerColor
 
 @Composable
 fun CreateRoomScreen(
-    onRoomCreated: (roomId: String) -> Unit,
+    onRoomCreated: (roomId: String, playerCount: Int, color: PlayerColor) -> Unit,
     onNavigateJoin: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -271,9 +271,8 @@ fun CreateRoomScreen(
                 accentColor = NeoLudoColors.EmeraldGreen,
                 onClick = {
                     val code = "NL-" + (1000..9999).random()
-                    onRoomCreated(code)
+                    onRoomCreated(code, playerCount, selectedColor)
                 },
-                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(14.dp))

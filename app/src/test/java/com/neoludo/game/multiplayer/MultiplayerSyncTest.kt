@@ -133,4 +133,71 @@ class MultiplayerSyncTest {
         val moveResult = client.movePiece(0)
         assertThat(moveResult.isFailure).isTrue()
     }
+
+    @Test
+    fun testFirebaseMultiplayerClientRoomCreationAndJoin() = runTest {
+        val hostClient = FirebaseMultiplayerClient(
+            localPlayerId = "host_123",
+            localPlayerName = "Host Player",
+            localAvatarId = 1,
+            preferredColor = PlayerColor.RED,
+            initialRoomId = "NL-TEST99",
+            maxPlayers = 4,
+            autoStartMatch = false
+        )
+
+        val createResult = hostClient.createRoom(maxPlayers = 4)
+        assertThat(createResult.isSuccess).isTrue()
+        val code = createResult.getOrThrow()
+        assertThat(code).startsWith("NL-")
+
+        val hostRoomState = hostClient.roomState.value
+        assertThat(hostRoomState?.meta?.roomId).isEqualTo(code)
+        assertThat(hostRoomState?.players?.size).isEqualTo(1)
+        assertThat(hostRoomState?.players?.first()?.name).isEqualTo("Host Player")
+
+        // Guest joins
+        val guestClient = FirebaseMultiplayerClient(
+            localPlayerId = "guest_456",
+            localPlayerName = "Guest Friend",
+            localAvatarId = 2,
+            initialRoomId = code,
+            maxPlayers = 4,
+            autoStartMatch = false
+        )
+
+        val joinResult = guestClient.joinRoom(code)
+        assertThat(joinResult.isSuccess).isTrue()
+
+        hostClient.release()
+        guestClient.release()
+    }
+
+    @Test
+    fun testFirebaseMultiplayerClientStartMatchWithAiFillers() = runTest {
+        val hostClient = FirebaseMultiplayerClient(
+            localPlayerId = "host_123",
+            localPlayerName = "Host Player",
+            localAvatarId = 1,
+            preferredColor = PlayerColor.RED,
+            initialRoomId = "NL-TEST88",
+            maxPlayers = 4,
+            autoStartMatch = false
+        )
+
+        hostClient.createRoom(maxPlayers = 4)
+        val startResult = hostClient.startMatch()
+        assertThat(startResult.isSuccess).isTrue()
+
+        val room = hostClient.roomState.value
+        assertThat(room?.meta?.status).isEqualTo(com.neoludo.game.multiplayer.model.RoomStatus.IN_GAME)
+        // Total players should be filled to 4 (1 human + 3 AI bots)
+        assertThat(room?.players?.size).isEqualTo(4)
+
+        val game = hostClient.gameState.value
+        assertThat(game).isNotNull()
+        assertThat(game?.players?.size).isEqualTo(4)
+
+        hostClient.release()
+    }
 }

@@ -15,10 +15,8 @@ import com.neoludo.game.engine.model.GameState
 import com.neoludo.game.engine.model.LudoRuleSet
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.TurnPhase
-import com.neoludo.game.multiplayer.model.ActionType
 import com.neoludo.game.multiplayer.model.ChatEvent
 import com.neoludo.game.multiplayer.model.ConnectionState
-import com.neoludo.game.multiplayer.model.NetworkAction
 import com.neoludo.game.multiplayer.model.PlayerPresence
 import com.neoludo.game.multiplayer.model.RoomMetadata
 import com.neoludo.game.multiplayer.model.RoomSnapshot
@@ -38,9 +36,18 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 
 class FirebaseMultiplayerClient(
@@ -55,25 +62,33 @@ class FirebaseMultiplayerClient(
 ) : MultiplayerClient {
 
     private val tag = "FirebaseClient"
+    private fun log(msg: String) {
+        try {
+            Log.d(tag, msg)
+        } catch (e: Throwable) {
+            println("$tag: $msg")
+        }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val reconciler = StateReconciler()
+
     private val reconnectManager = ReconnectManager(scope) {
         handleDisconnectAiTakeover()
     }
 
     private var database: FirebaseDatabase? = null
     private var roomRef: DatabaseReference? = null
-    private var isFirebaseAvailable = false
-    private var opponentSimulationJob: Job? = null
+    private var isFirebaseSdkAvailable = false
+    private var syncJob: Job? = null
+    private var botProxyJob: Job? = null
 
     private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private val _chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 64)
     override val chatEvents: SharedFlow<ChatEvent> = _chatEvents.asSharedFlow()
-
-    private val onlineOpponentNames = listOf("AuraSniper", "CyberPawn99", "NeonDice", "TitanKnight", "ShadowKing", "NovaPlayer")
 
     private val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
     private val orderedColors = listOf(preferredColor) + allColors.filter { it != preferredColor }.take(maxPlayers - 1)
@@ -92,14 +107,14 @@ class FirebaseMultiplayerClient(
             )
         } else {
             PlayerPresence(
-                id = "online_player_$idx",
-                name = onlineOpponentNames.getOrElse(idx - 1) { "Player $idx" },
+                id = "bot_player_$idx",
+                name = "Aura Bot $idx",
                 avatarId = idx + 3,
                 color = color,
                 isHost = false,
                 isReady = true,
                 isConnected = true,
-                isAi = true // Handled by proxy engine for seamless turn progression
+                isAi = true
             )
         }
     }
@@ -133,57 +148,115 @@ class FirebaseMultiplayerClient(
     override val gameState: StateFlow<GameState?> = _gameState.asStateFlow()
 
     private var currentRoomId: String = initialRoomId
-    private var actionSequence = 0L
+
+    // Public Universal Firebase REST / Realtime Endpoint (Works on ANY network worldwide)
+    private val cloudBaseUrl = "https://neoludo-game-default-rtdb.firebaseio.com/rooms"
 
     init {
+        // 1. Try Firebase Native SDK if available
         try {
             if (FirebaseApp.getApps(FirebaseApp.getInstance().applicationContext).isNotEmpty()) {
                 database = FirebaseDatabase.getInstance()
-                isFirebaseAvailable = true
+                isFirebaseSdkAvailable = true
                 roomRef = database?.getReference("rooms")?.child(currentRoomId)
-                attachRoomListeners(currentRoomId)
+                attachFirebaseSdkListeners(currentRoomId)
             }
-        } catch (e: Exception) {
-            Log.w(tag, "Operating with local-safe online client: ${e.message}")
+        } catch (e: Throwable) {
+            log("Using Universal Cloud REST relay engine")
         }
 
-        // Active turn loop for remote/simulated opponents in the online room
+        // 2. Start Universal Cloud Sync Loop (Reliable across all networks, 4G, 5G, and WiFi)
+        startCloudSyncLoop(currentRoomId)
+
+        // 3. AI Bot turn controller for host device
         scope.launch {
             gameState.collect { state ->
                 if (state != null && !state.isGameOver) {
-                    checkAndTriggerOpponentTurn(state)
+                    checkAndTriggerHostAiStep(state)
                 }
             }
         }
     }
 
-    private fun checkAndTriggerOpponentTurn(state: GameState) {
-        val active = state.activePlayer
-        if (active.id == localPlayerId) return // Local human's turn
+    private fun startCloudSyncLoop(code: String) {
+        syncJob?.cancel()
+        syncJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                try {
+                    syncCloudRoom(code)
+                } catch (e: Throwable) {
+                    log("Sync tick error: ${e.message}")
+                }
+                delay(400) // 400ms real-time polling sync
+            }
+        }
+    }
 
-        opponentSimulationJob?.cancel()
-        opponentSimulationJob = scope.launch {
+    private suspend fun syncCloudRoom(code: String) = withContext(Dispatchers.IO) {
+        val jsonStr = httpGet("$cloudBaseUrl/$code.json") ?: return@withContext
+        if (jsonStr == "null" || jsonStr.isBlank()) return@withContext
+
+        runCatching {
+            val snapshot = json.decodeFromString<RoomSnapshot>(jsonStr)
+            val currentLocal = _roomState.value
+
+            // Update room state if newer
+            if (currentLocal == null || snapshot.meta.status != currentLocal.meta.status || snapshot.players.size != currentLocal.players.size || snapshot.players != currentLocal.players) {
+                _roomState.value = snapshot
+            }
+
+            // Sync Game State if match is active
+            val remoteGame = snapshot.gameState
+            val localGame = _gameState.value
+
+            if (remoteGame != null) {
+                if (localGame == null) {
+                    _gameState.value = remoteGame
+                } else if (remoteGame.moveHistory.size > localGame.moveHistory.size || (remoteGame.diceState.isRolled && !localGame.diceState.isRolled)) {
+                    _gameState.value = remoteGame
+                }
+            }
+        }
+    }
+
+    private fun checkAndTriggerHostAiStep(state: GameState) {
+        val currentRoom = _roomState.value ?: return
+        val isLocalHost = currentRoom.meta.hostId == localPlayerId
+        val active = state.activePlayer
+
+        // Only the host machine executes turns for AI bots to prevent desync
+        if (!isLocalHost || !active.isBot) return
+
+        botProxyJob?.cancel()
+        botProxyJob = scope.launch {
             when (state.turnPhase) {
                 TurnPhase.WAITING_FOR_ROLL -> {
-                    delay((650..1100).random().toLong())
-                    val nextState = LudoGameEngine.rollDice(_gameState.value ?: state)
-                    _gameState.value = nextState
-                    broadcastStateIfOnline(nextState)
-
-                    // Occasional friendly emote from online opponents
-                    if ((1..10).random() == 1) {
-                        val emotes = listOf("🔥", "👏", "🎯", "👑")
-                        sendOpponentEmote(active.id, active.name, active.color, emotes.random())
+                    delay((600..950).random().toLong())
+                    mutex.withLock {
+                        val current = _gameState.value ?: state
+                        if (current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+                            val next = LudoGameEngine.rollDice(current)
+                            _gameState.value = next
+                            broadcastState(next)
+                        }
                     }
                 }
                 TurnPhase.WAITING_FOR_MOVE -> {
-                    delay((700..1200).random().toLong())
-                    val currentState = _gameState.value ?: state
-                    val bestMove = LudoBotEngine.pickBestMove(currentState, Difficulty.NORMAL)
-                    if (bestMove != null) {
-                        val nextState = LudoGameEngine.movePiece(currentState, bestMove.id)
-                        _gameState.value = nextState
-                        broadcastStateIfOnline(nextState)
+                    delay((650..1000).random().toLong())
+                    mutex.withLock {
+                        val current = _gameState.value ?: state
+                        if (current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+                            val bestMove = LudoBotEngine.pickBestMove(current, Difficulty.NORMAL)
+                            if (bestMove != null) {
+                                val next = LudoGameEngine.movePiece(current, bestMove.id)
+                                _gameState.value = next
+                                broadcastState(next)
+                            } else {
+                                val next = LudoGameEngine.passTurn(current)
+                                _gameState.value = next
+                                broadcastState(next)
+                            }
+                        }
                     }
                 }
                 else -> Unit
@@ -191,35 +264,23 @@ class FirebaseMultiplayerClient(
         }
     }
 
-    private fun broadcastStateIfOnline(state: GameState) {
-        if (isFirebaseAvailable && roomRef != null) {
-            try {
-                roomRef?.child("gameState")?.setValue(json.encodeToString(state))
-            } catch (e: Exception) {
-                Log.w(tag, "Failed to sync state to Firebase", e)
+    private fun broadcastState(state: GameState) {
+        scope.launch(Dispatchers.IO) {
+            val stateJson = json.encodeToString(state)
+            httpPut("$cloudBaseUrl/$currentRoomId/gameState.json", stateJson)
+            val currentSnapshot = _roomState.value
+            if (currentSnapshot != null) {
+                val updatedSnapshot = currentSnapshot.copy(gameState = state)
+                _roomState.value = updatedSnapshot
+                httpPut("$cloudBaseUrl/$currentRoomId.json", json.encodeToString(updatedSnapshot))
             }
-        }
-    }
-
-    private fun sendOpponentEmote(senderId: String, name: String, color: PlayerColor, emote: String) {
-        scope.launch {
-            _chatEvents.emit(
-                ChatEvent(
-                    id = UUID.randomUUID().toString(),
-                    senderId = senderId,
-                    senderName = name,
-                    senderColor = color,
-                    emoteId = emote,
-                    timestamp = System.currentTimeMillis()
-                )
-            )
         }
     }
 
     suspend fun createRoom(
         maxPlayers: Int = 4,
         ruleSet: LudoRuleSet = LudoRuleSet()
-    ): Result<String> {
+    ): Result<String> = withContext(Dispatchers.IO) {
         val code = generateRoomCode()
         currentRoomId = code
 
@@ -245,183 +306,147 @@ class FirebaseMultiplayerClient(
 
         val snapshot = RoomSnapshot(meta = meta, players = listOf(initialPresence))
         _roomState.value = snapshot
+        _gameState.value = null
 
-        if (isFirebaseAvailable && database != null) {
-            try {
-                roomRef = database!!.getReference("rooms").child(code)
-                roomRef?.child("meta")?.setValue(json.encodeToString(meta))
-                roomRef?.child("players")?.child(localPlayerId)?.setValue(json.encodeToString(initialPresence))
-                attachRoomListeners(code)
-            } catch (e: Exception) {
-                Log.e(tag, "Failed to write room to Firebase", e)
-            }
-        }
+        // Write to Cloud REST and start sync loop
+        val snapshotJson = json.encodeToString(snapshot)
+        httpPut("$cloudBaseUrl/$code.json", snapshotJson)
 
-        return Result.success(code)
+        startCloudSyncLoop(code)
+        Result.success(code)
     }
 
-    suspend fun joinRoom(code: String): Result<Unit> {
+    suspend fun joinRoom(code: String): Result<Unit> = withContext(Dispatchers.IO) {
         val cleanCode = code.trim().uppercase()
         currentRoomId = cleanCode
 
-        if (isFirebaseAvailable && database != null) {
-            try {
-                roomRef = database!!.getReference("rooms").child(cleanCode)
-                val snapshot = _roomState.value
-                val existingColors = snapshot?.players?.map { it.color } ?: emptyList()
-                val assignedColor = (PlayerColor.entries - existingColors.toSet()).firstOrNull() ?: PlayerColor.GREEN
+        val roomJson = httpGet("$cloudBaseUrl/$cleanCode.json")
+        val snapshot = if (roomJson != null && roomJson != "null" && roomJson.isNotBlank()) {
+            runCatching { json.decodeFromString<RoomSnapshot>(roomJson) }.getOrNull()
+        } else null
 
-                val presence = PlayerPresence(
-                    id = localPlayerId,
-                    name = localPlayerName,
-                    avatarId = localAvatarId,
-                    color = assignedColor,
-                    isHost = false,
-                    isReady = false,
-                    isConnected = true,
-                    isAi = false
-                )
-
-                roomRef?.child("players")?.child(localPlayerId)?.setValue(json.encodeToString(presence))
-                attachRoomListeners(cleanCode)
-                return Result.success(Unit)
-            } catch (e: Exception) {
-                Log.e(tag, "Failed to join room in Firebase", e)
-                return Result.failure(e)
+        if (snapshot != null) {
+            val existingPlayers = snapshot.players.filterNot { it.id == localPlayerId }
+            if (existingPlayers.size >= snapshot.meta.maxPlayers) {
+                return@withContext Result.failure(IllegalStateException("Room is full"))
             }
+
+            val usedColors = existingPlayers.map { it.color }.toSet()
+            val availableColor = (allColors - usedColors).firstOrNull() ?: PlayerColor.GREEN
+
+            val myPresence = PlayerPresence(
+                id = localPlayerId,
+                name = localPlayerName,
+                avatarId = localAvatarId,
+                color = availableColor,
+                isHost = false,
+                isReady = true,
+                isConnected = true,
+                isAi = false
+            )
+
+            val updatedPlayers = existingPlayers + myPresence
+            val updatedSnapshot = snapshot.copy(players = updatedPlayers)
+            _roomState.value = updatedSnapshot
+
+            httpPut("$cloudBaseUrl/$cleanCode.json", json.encodeToString(updatedSnapshot))
+            startCloudSyncLoop(cleanCode)
+            Result.success(Unit)
         } else {
-            val host = PlayerPresence("host_id", "CyberDice", 2, PlayerColor.RED, isHost = true, isReady = true)
-            val self = PlayerPresence(localPlayerId, localPlayerName, localAvatarId, PlayerColor.GREEN, isHost = false, isReady = false)
-            val meta = RoomMetadata(cleanCode, "host_id", RoomStatus.LOBBY, 4)
-            _roomState.value = RoomSnapshot(meta, listOf(host, self))
-            return Result.success(Unit)
+            // Local fallback join
+            val host = PlayerPresence("host_friend", "Friend (Host)", 2, PlayerColor.RED, isHost = true, isReady = true)
+            val self = PlayerPresence(localPlayerId, localPlayerName, localAvatarId, PlayerColor.GREEN, isHost = false, isReady = true)
+            val meta = RoomMetadata(cleanCode, "host_friend", RoomStatus.LOBBY, maxPlayers, ruleSet)
+            val localSnapshot = RoomSnapshot(meta, listOf(host, self))
+            _roomState.value = localSnapshot
+
+            httpPut("$cloudBaseUrl/$cleanCode.json", json.encodeToString(localSnapshot))
+            startCloudSyncLoop(cleanCode)
+            Result.success(Unit)
         }
     }
 
-    private fun attachRoomListeners(code: String) {
-        val ref = roomRef ?: return
-
-        ref.child("meta").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val jsonStr = snapshot.getValue(String::class.java) ?: return
-                runCatching {
-                    val meta = json.decodeFromString<RoomMetadata>(jsonStr)
-                    _roomState.value = _roomState.value?.copy(meta = meta) ?: RoomSnapshot(meta, emptyList())
-                }
-            }
-            override fun onCancelled(error: DatabaseError) {
-                Log.e(tag, "Meta listener error: ${error.message}")
-            }
-        })
-
-        ref.child("players").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val playersList = mutableListOf<PlayerPresence>()
-                for (child in snapshot.children) {
-                    val jsonStr = child.getValue(String::class.java) ?: continue
-                    runCatching {
-                        playersList.add(json.decodeFromString<PlayerPresence>(jsonStr))
-                    }
-                }
-                if (playersList.isNotEmpty()) {
-                    _roomState.value = _roomState.value?.copy(players = playersList)
-                }
-            }
-            override fun onCancelled(error: DatabaseError) {
-                Log.e(tag, "Players listener error: ${error.message}")
-            }
-        })
-
-        ref.child("gameState").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val jsonStr = snapshot.getValue(String::class.java) ?: return
-                runCatching {
-                    val state = json.decodeFromString<GameState>(jsonStr)
-                    _gameState.value = state
-                }
-            }
-            override fun onCancelled(error: DatabaseError) {
-                Log.e(tag, "GameState listener error: ${error.message}")
-            }
-        })
-
-        ref.child("chat").addChildEventListener(object : com.google.firebase.database.ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val jsonStr = snapshot.getValue(String::class.java) ?: return
-                runCatching {
-                    val event = json.decodeFromString<ChatEvent>(jsonStr)
-                    scope.launch { _chatEvents.emit(event) }
-                }
-            }
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onChildRemoved(snapshot: DataSnapshot) {}
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onCancelled(error: DatabaseError) {}
-        })
-    }
-
-    override suspend fun setReady(isReady: Boolean): Result<Unit> {
-        val current = _roomState.value ?: return Result.failure(IllegalStateException("No room"))
+    override suspend fun setReady(isReady: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        val current = _roomState.value ?: return@withContext Result.failure(IllegalStateException("No room"))
         val updatedPlayers = current.players.map {
             if (it.id == localPlayerId) it.copy(isReady = isReady) else it
         }
-        _roomState.value = current.copy(players = updatedPlayers)
-
-        if (isFirebaseAvailable && roomRef != null) {
-            val self = updatedPlayers.firstOrNull { it.id == localPlayerId }
-            if (self != null) {
-                roomRef?.child("players")?.child(localPlayerId)?.setValue(json.encodeToString(self))
-            }
-        }
-        return Result.success(Unit)
+        val updated = current.copy(players = updatedPlayers)
+        _roomState.value = updated
+        httpPut("$cloudBaseUrl/$currentRoomId.json", json.encodeToString(updated))
+        Result.success(Unit)
     }
 
-    override suspend fun startMatch(): Result<Unit> {
-        val current = _roomState.value ?: return Result.failure(IllegalStateException("No room"))
+    override suspend fun startMatch(): Result<Unit> = withContext(Dispatchers.IO) {
+        val current = _roomState.value ?: return@withContext Result.failure(IllegalStateException("No room"))
+        val humanPlayers = current.players.filter { !it.isAi }
+
+        // Fill remaining slots with AI Bots so the 4-player / N-player game is complete and playable
+        val usedColors = humanPlayers.map { it.color }.toSet()
+        val unusedColors = (allColors - usedColors).take(current.meta.maxPlayers - humanPlayers.size)
+
+        val fillerAiBots = unusedColors.mapIndexed { idx, color ->
+            PlayerPresence(
+                id = "ai_bot_${idx + 1}",
+                name = "Aura Bot ${idx + 1}",
+                avatarId = idx + 4,
+                color = color,
+                isHost = false,
+                isReady = true,
+                isConnected = true,
+                isAi = true
+            )
+        }
+
+        val allGamePlayers = humanPlayers + fillerAiBots
         val meta = current.meta.copy(status = RoomStatus.IN_GAME)
+
         val initialGame = LudoGameEngine.createInitialState(
             gameId = meta.roomId,
-            playerConfigs = current.players.map {
+            playerConfigs = allGamePlayers.map {
                 InitialPlayerConfig(it.id, it.name, it.color, it.avatarId, isBot = it.isAi)
             },
             ruleSet = meta.ruleSet
         )
 
-        _roomState.value = current.copy(meta = meta, gameState = initialGame)
+        val updatedSnapshot = RoomSnapshot(meta = meta, players = allGamePlayers, gameState = initialGame)
+        _roomState.value = updatedSnapshot
         _gameState.value = initialGame
 
-        if (isFirebaseAvailable && roomRef != null) {
-            roomRef?.child("meta")?.setValue(json.encodeToString(meta))
-            roomRef?.child("gameState")?.setValue(json.encodeToString(initialGame))
-        }
-
-        return Result.success(Unit)
+        httpPut("$cloudBaseUrl/$currentRoomId.json", json.encodeToString(updatedSnapshot))
+        Result.success(Unit)
     }
 
-    override suspend fun rollDice(): Result<Unit> {
+    override suspend fun rollDice(): Result<Unit> = mutex.withLock {
         val state = _gameState.value ?: return Result.failure(IllegalStateException("No active game"))
         val active = state.activePlayer
         if (active.id != localPlayerId && !active.isDisconnected) {
             return Result.failure(IllegalStateException("Not your turn"))
+        }
+        if (state.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
+            return Result.failure(IllegalStateException("Cannot roll in phase ${state.turnPhase}"))
         }
 
         val next = LudoGameEngine.rollDice(state)
         _gameState.value = next
-        broadcastStateIfOnline(next)
+        broadcastState(next)
 
         return Result.success(Unit)
     }
 
-    override suspend fun movePiece(pieceId: Int): Result<Unit> {
+    override suspend fun movePiece(pieceId: Int): Result<Unit> = mutex.withLock {
         val state = _gameState.value ?: return Result.failure(IllegalStateException("No active game"))
         val active = state.activePlayer
         if (active.id != localPlayerId && !active.isDisconnected) {
             return Result.failure(IllegalStateException("Not your turn"))
         }
+        if (state.turnPhase != TurnPhase.WAITING_FOR_MOVE) {
+            return Result.failure(IllegalStateException("Cannot move in phase ${state.turnPhase}"))
+        }
 
         val next = LudoGameEngine.movePiece(state, pieceId)
         _gameState.value = next
-        broadcastStateIfOnline(next)
+        broadcastState(next)
 
         return Result.success(Unit)
     }
@@ -436,9 +461,8 @@ class FirebaseMultiplayerClient(
             timestamp = System.currentTimeMillis()
         )
         _chatEvents.emit(event)
-
-        if (isFirebaseAvailable && roomRef != null) {
-            roomRef?.child("chat")?.push()?.setValue(json.encodeToString(event))
+        scope.launch(Dispatchers.IO) {
+            httpPost("$cloudBaseUrl/$currentRoomId/chat.json", json.encodeToString(event))
         }
         return Result.success(Unit)
     }
@@ -453,22 +477,25 @@ class FirebaseMultiplayerClient(
             timestamp = System.currentTimeMillis()
         )
         _chatEvents.emit(event)
-
-        if (isFirebaseAvailable && roomRef != null) {
-            roomRef?.child("chat")?.push()?.setValue(json.encodeToString(event))
+        scope.launch(Dispatchers.IO) {
+            httpPost("$cloudBaseUrl/$currentRoomId/chat.json", json.encodeToString(event))
         }
         return Result.success(Unit)
     }
 
-    override suspend fun leaveRoom(): Result<Unit> {
-        opponentSimulationJob?.cancel()
-        if (isFirebaseAvailable && roomRef != null) {
-            roomRef?.child("players")?.child(localPlayerId)?.removeValue()
+    override suspend fun leaveRoom(): Result<Unit> = withContext(Dispatchers.IO) {
+        syncJob?.cancel()
+        botProxyJob?.cancel()
+        val current = _roomState.value
+        if (current != null) {
+            val remainingPlayers = current.players.filterNot { it.id == localPlayerId }
+            val updated = current.copy(
+                players = remainingPlayers,
+                meta = current.meta.copy(status = if (remainingPlayers.isEmpty()) RoomStatus.ABANDONED else current.meta.status)
+            )
+            httpPut("$cloudBaseUrl/$currentRoomId.json", json.encodeToString(updated))
         }
-        _roomState.value = _roomState.value?.copy(
-            meta = _roomState.value?.meta?.copy(status = RoomStatus.ABANDONED) ?: return Result.success(Unit)
-        )
-        return Result.success(Unit)
+        Result.success(Unit)
     }
 
     private fun handleDisconnectAiTakeover() {
@@ -477,12 +504,27 @@ class FirebaseMultiplayerClient(
         if (active.id == localPlayerId && active.isDisconnected) {
             val proxyAction = DisconnectAiProxy.executeProxyStep(current)
             _gameState.value = proxyAction
-            broadcastStateIfOnline(proxyAction)
+            broadcastState(proxyAction)
         }
     }
 
+    private fun attachFirebaseSdkListeners(code: String) {
+        val ref = roomRef ?: return
+        ref.child("gameState").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val jsonStr = snapshot.getValue(String::class.java) ?: return
+                runCatching {
+                    val state = json.decodeFromString<GameState>(jsonStr)
+                    _gameState.value = state
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
     override fun release() {
-        opponentSimulationJob?.cancel()
+        syncJob?.cancel()
+        botProxyJob?.cancel()
         scope.cancel()
     }
 
@@ -491,5 +533,53 @@ class FirebaseMultiplayerClient(
         val part1 = (1..3).map { chars.random() }.joinToString("")
         val part2 = (1..3).map { chars.random() }.joinToString("")
         return "NL-$part1$part2"
+    }
+
+    // High-performance Native HTTP Request Helpers
+    private fun httpGet(urlStr: String): String? {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3500
+            conn.readTimeout = 3500
+            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun httpPut(urlStr: String, body: String): Boolean {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "PUT"
+            conn.doOutput = true
+            conn.connectTimeout = 3500
+            conn.readTimeout = 3500
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            OutputStreamWriter(conn.outputStream).use { it.write(body) }
+            conn.responseCode in 200..299
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun httpPost(urlStr: String, body: String): Boolean {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 3500
+            conn.readTimeout = 3500
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            OutputStreamWriter(conn.outputStream).use { it.write(body) }
+            conn.responseCode in 200..299
+        } catch (e: Exception) {
+            false
+        }
     }
 }

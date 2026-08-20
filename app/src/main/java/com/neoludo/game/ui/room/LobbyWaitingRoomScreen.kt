@@ -1,6 +1,7 @@
 package com.neoludo.game.ui.room
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,10 +29,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,35 +47,36 @@ import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
 import com.neoludo.game.engine.model.PlayerColor
-
-data class LobbySlot(
-    val id: String,
-    val name: String,
-    val color: PlayerColor,
-    val isHost: Boolean = false,
-    val isReady: Boolean = false,
-    val isFilled: Boolean = true
-)
+import com.neoludo.game.multiplayer.MultiplayerClient
+import com.neoludo.game.multiplayer.model.PlayerPresence
+import com.neoludo.game.multiplayer.model.RoomStatus
+import kotlinx.coroutines.launch
 
 @Composable
 fun LobbyWaitingRoomScreen(
     roomId: String,
+    client: MultiplayerClient,
+    localPlayerId: String,
     onStartGame: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    var isSelfReady by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
 
-    // Mock lobby state for immediate interactive use
-    val slots = remember(roomId, isSelfReady) {
-        listOf(
-            LobbySlot("p1", "You (Host)", PlayerColor.RED, isHost = true, isReady = isSelfReady, isFilled = true),
-            LobbySlot("p2", "CyberDice", PlayerColor.GREEN, isHost = false, isReady = true, isFilled = true),
-            LobbySlot("p3", "ShadowPawn", PlayerColor.YELLOW, isHost = false, isReady = false, isFilled = true),
-            LobbySlot("p4", "Waiting...", PlayerColor.BLUE, isHost = false, isReady = false, isFilled = false)
-        )
+    val roomState by client.roomState.collectAsState()
+    val presences = roomState?.players ?: emptyList()
+    val self = presences.find { it.id == localPlayerId }
+    val isHost = self?.isHost == true || (presences.isNotEmpty() && presences.first().id == localPlayerId)
+    val maxPlayers = roomState?.meta?.maxPlayers ?: 4
+    val isSelfReady = self?.isReady ?: true
+
+    // Auto-navigate to game when match starts on ANY connected device across the internet
+    LaunchedEffect(roomState?.meta?.status, roomState?.gameState) {
+        if (roomState?.meta?.status == RoomStatus.IN_GAME || roomState?.gameState != null) {
+            onStartGame()
+        }
     }
 
     Box(
@@ -95,7 +97,10 @@ fun LobbyWaitingRoomScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 IconButton(
-                    onClick = onBack,
+                    onClick = {
+                        scope.launch { client.leaveRoom() }
+                        onBack()
+                    },
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
@@ -211,9 +216,10 @@ fun LobbyWaitingRoomScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Player Roster
+            // Player Roster Header
+            val humanCount = presences.count { !it.isAi }
             Text(
-                text = "PLAYERS (3/4)",
+                text = "PLAYERS ($humanCount / $maxPlayers)",
                 color = NeoLudoColors.ObsidianTextMuted,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -222,32 +228,49 @@ fun LobbyWaitingRoomScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // Player Slots
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                slots.forEach { slot ->
-                    PlayerSlotCard(slot = slot)
+                for (i in 0 until maxPlayers) {
+                    val presence = presences.getOrNull(i)
+                    PlayerPresenceSlotCard(
+                        presence = presence,
+                        isLocal = presence?.id == localPlayerId,
+                        slotIndex = i
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Ready & Start Controls
+            // Controls
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                NeoLudoButton(
-                    text = if (isSelfReady) "Ready ✓" else "Not Ready",
-                    accentColor = if (isSelfReady) NeoLudoColors.EmeraldGreen else Color.Gray,
-                    onClick = { isSelfReady = !isSelfReady },
-                    modifier = Modifier.weight(1f)
-                )
+                if (!isHost) {
+                    NeoLudoButton(
+                        text = if (isSelfReady) "Ready ✓" else "Not Ready",
+                        accentColor = if (isSelfReady) NeoLudoColors.EmeraldGreen else Color.Gray,
+                        onClick = {
+                            scope.launch { client.setReady(!isSelfReady) }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
-                NeoLudoButton(
-                    text = "Start Match",
-                    accentColor = NeoLudoColors.CobaltBlue,
-                    onClick = onStartGame,
-                    modifier = Modifier.weight(1f)
-                )
+                if (isHost) {
+                    NeoLudoButton(
+                        text = "Start Match",
+                        accentColor = NeoLudoColors.CobaltBlue,
+                        onClick = {
+                            scope.launch {
+                                client.startMatch()
+                                onStartGame()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(36.dp))
@@ -256,8 +279,19 @@ fun LobbyWaitingRoomScreen(
 }
 
 @Composable
-private fun PlayerSlotCard(slot: LobbySlot) {
-    val playerColor = NeoLudoColors.getPlayerColor(slot.color)
+private fun PlayerPresenceSlotCard(
+    presence: PlayerPresence?,
+    isLocal: Boolean,
+    slotIndex: Int
+) {
+    val isFilled = presence != null
+    val defaultColor = when (slotIndex) {
+        0 -> PlayerColor.RED
+        1 -> PlayerColor.GREEN
+        2 -> PlayerColor.YELLOW
+        else -> PlayerColor.BLUE
+    }
+    val playerColor = NeoLudoColors.getPlayerColor(presence?.color ?: defaultColor)
 
     Surface(
         modifier = Modifier
@@ -265,10 +299,10 @@ private fun PlayerSlotCard(slot: LobbySlot) {
             .clip(RoundedCornerShape(16.dp))
             .border(
                 1.dp,
-                if (slot.isFilled) playerColor.copy(alpha = 0.4f) else NeoLudoColors.ObsidianBorder,
+                if (isFilled) playerColor.copy(alpha = 0.5f) else NeoLudoColors.ObsidianBorder,
                 RoundedCornerShape(16.dp)
             ),
-        color = if (slot.isFilled) NeoLudoColors.ObsidianSurfaceCard else NeoLudoColors.ObsidianSurfaceCard.copy(alpha = 0.4f),
+        color = if (isFilled) NeoLudoColors.ObsidianSurfaceCard else NeoLudoColors.ObsidianSurfaceCard.copy(alpha = 0.35f),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -277,15 +311,15 @@ private fun PlayerSlotCard(slot: LobbySlot) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
-                    .background(if (slot.isFilled) playerColor else Color.DarkGray),
+                    .background(if (isFilled) playerColor else Color.DarkGray),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (slot.isFilled) slot.name.take(1).uppercase() else "?",
+                    text = if (isFilled) presence!!.name.take(1).uppercase() else "+",
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
                     fontSize = 16.sp
                 )
             }
@@ -294,33 +328,39 @@ private fun PlayerSlotCard(slot: LobbySlot) {
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = slot.name,
-                    color = if (slot.isFilled) Color.White else NeoLudoColors.ObsidianTextMuted,
+                    text = if (isFilled) (if (isLocal) "${presence!!.name} (You)" else presence!!.name) else "Waiting for Friend...",
+                    color = if (isFilled) Color.White else NeoLudoColors.ObsidianTextMuted,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
-                if (slot.isHost) {
+                if (presence?.isHost == true) {
                     Text(
-                        text = "Room Host",
+                        text = "Room Host 👑",
                         color = NeoLudoColors.AmberYellow,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
+                    )
+                } else if (presence?.isAi == true) {
+                    Text(
+                        text = "AI Bot Filler 🤖",
+                        color = NeoLudoColors.ObsidianTextSecondary,
+                        fontSize = 11.sp
                     )
                 }
             }
 
-            if (slot.isFilled) {
+            if (isFilled) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = if (slot.isReady) Icons.Default.CheckCircle else Icons.Default.HourglassEmpty,
+                        imageVector = if (presence!!.isReady) Icons.Default.CheckCircle else Icons.Default.HourglassEmpty,
                         contentDescription = "Status",
-                        tint = if (slot.isReady) NeoLudoColors.EmeraldGreen else NeoLudoColors.AmberYellow,
+                        tint = if (presence.isReady) NeoLudoColors.EmeraldGreen else NeoLudoColors.AmberYellow,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (slot.isReady) "Ready" else "Waiting",
-                        color = if (slot.isReady) NeoLudoColors.EmeraldGreen else NeoLudoColors.AmberYellow,
+                        text = if (presence.isReady) "Ready" else "Waiting",
+                        color = if (presence.isReady) NeoLudoColors.EmeraldGreen else NeoLudoColors.AmberYellow,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
