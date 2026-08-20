@@ -18,7 +18,7 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 
 Get the pre-built, ready-to-install debug APK directly from the repository:
 
-🔗 **[Download NeoLudo-v1.3.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.3.0.apk)**
+🔗 **[Download NeoLudo-v1.4.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.4.0.apk)**
 
 ---
 
@@ -61,11 +61,12 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
   - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
   - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
   - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
-- **Arcade 2-Player HUD Bar**: Dedicated "You vs Com" arcade plate bar with glowing active turn selection halos and embedded central die.
-- **Celebratory In-Board Visual FX**:
-  - **Capture Shockwave Ripple**: Expanding alpha circle ripple at the capture coordinate.
-  - **Home Starburst Rays**: Expanding gold rays with sparkling heads upon reaching home.
-  - **Safe-Star Shields**: Continuous rotating stars and pulsing orbit shields on all 8 safe cells.
+- **2026 AAA Game Hub Home Interface**:
+  - **Header Persona & Dual Economy Trackers**: Level badges (`LV.24`), player title badges, win-rate indicators, Gold Coins counter (🪙 `25,400`), and Gem Diamonds (💎 `120`).
+  - **Featured Hero Card (Play Online)**: High-impact hero banner with live matchmaking indicators (`🟢 4,820 LIVE`), 3D dice graphic preview, and instant play CTA.
+  - **2x2 Interactive Game Modes Grid**: Tactile expressive cards for *Play with Friends*, *Pass & Play*, *Vs Computer*, and *Cosmetics Locker*.
+  - **Daily Quests & Fortune Rewards**: Quest progress bars (coins & gem rewards) with claimable daily fortune chest.
+  - **Floating Glassmorphic Bottom Navigation**: 5-tab floating pill bar (`Play`, `Locker`, `Friends`, `Rules`, `Settings`).
   - **Confetti Celebration & 3-Tier Victory Podium**: Post-match ceremony with falling confetti particles.
 - **Career Hub & Match History**:
   - 16 selectable avatar badges & player title badges (`Grandmaster`, `Dice Sorcerer`, `Board Conqueror`, `Pawn Crusher`, `Casual Roller`, `Speed Demon`).
