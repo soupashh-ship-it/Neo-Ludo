@@ -41,9 +41,14 @@ sealed class Screen(val route: String) {
     data object Lobby : Screen("lobby/{roomId}") {
         fun createRoute(roomId: String) = "lobby/$roomId"
     }
-    data object Game : Screen("game/{mode}/{roomId}/{playerCount}/{difficulty}") {
-        fun createRoute(mode: String, roomId: String, playerCount: Int = 4, difficulty: String = "NORMAL") =
-            "game/$mode/$roomId/$playerCount/$difficulty"
+    data object Game : Screen("game/{mode}/{roomId}/{playerCount}/{difficulty}/{color}") {
+        fun createRoute(
+            mode: String,
+            roomId: String,
+            playerCount: Int = 4,
+            difficulty: String = "NORMAL",
+            color: String = "RED"
+        ) = "game/$mode/$roomId/$playerCount/$difficulty/$color"
     }
     data object Result : Screen("result/{winnerColor}/{captures}/{sixes}") {
         fun createRoute(winnerColor: String, captures: Int, sixes: Int) =
@@ -87,18 +92,18 @@ fun NeoLudoNavHost(
             HomeScreen(
                 profile = profile,
                 stats = stats,
-                onNavigateOnline = {
+                onStartOnline = { count ->
                     val code = "ON-" + (1000..9999).random()
-                    navController.navigate(Screen.Game.createRoute("ONLINE", code, 4, "NORMAL"))
+                    navController.navigate(Screen.Game.createRoute("ONLINE", code, count, "NORMAL", "RED"))
                 },
                 onNavigateFriends = {
                     navController.navigate(Screen.CreateRoom.route)
                 },
-                onNavigateLocal = {
-                    navController.navigate(Screen.Game.createRoute("LOCAL", "local_match", 4, "NORMAL"))
+                onStartLocal = { count ->
+                    navController.navigate(Screen.Game.createRoute("LOCAL", "local_match", count, "NORMAL", "RED"))
                 },
-                onNavigateAi = {
-                    navController.navigate(Screen.Game.createRoute("AI", "ai_match", 4, "NORMAL"))
+                onStartAi = { diff, count, col ->
+                    navController.navigate(Screen.Game.createRoute("AI", "ai_match", count, diff, col))
                 },
                 onNavigateProfile = { navController.navigate(Screen.Profile.route) },
                 onNavigateSettings = { navController.navigate(Screen.Settings.route) },
@@ -136,7 +141,7 @@ fun NeoLudoNavHost(
             LobbyWaitingRoomScreen(
                 roomId = roomId,
                 onStartGame = {
-                    navController.navigate(Screen.Game.createRoute("ONLINE", roomId, 4, "NORMAL")) {
+                    navController.navigate(Screen.Game.createRoute("ONLINE", roomId, 4, "NORMAL", "RED")) {
                         popUpTo(Screen.Home.route)
                     }
                 },
@@ -150,7 +155,8 @@ fun NeoLudoNavHost(
                 navArgument("mode") { type = NavType.StringType },
                 navArgument("roomId") { type = NavType.StringType },
                 navArgument("playerCount") { type = NavType.IntType; defaultValue = 4 },
-                navArgument("difficulty") { type = NavType.StringType; defaultValue = "NORMAL" }
+                navArgument("difficulty") { type = NavType.StringType; defaultValue = "NORMAL" },
+                navArgument("color") { type = NavType.StringType; defaultValue = "RED" }
             )
         ) { backStackEntry ->
             val mode = backStackEntry.arguments?.getString("mode") ?: "LOCAL"
@@ -158,13 +164,15 @@ fun NeoLudoNavHost(
             val playerCount = backStackEntry.arguments?.getInt("playerCount") ?: 4
             val difficultyStr = backStackEntry.arguments?.getString("difficulty") ?: "NORMAL"
             val difficulty = runCatching { Difficulty.valueOf(difficultyStr) }.getOrDefault(Difficulty.NORMAL)
+            val colorStr = backStackEntry.arguments?.getString("color") ?: "RED"
+            val chosenColor = runCatching { PlayerColor.valueOf(colorStr) }.getOrDefault(PlayerColor.RED)
 
-            val client = remember(mode, roomId) {
+            val client = remember(mode, roomId, playerCount, difficulty, chosenColor) {
                 when (mode) {
                     "AI" -> BotMultiplayerClient(
                         humanName = profile.displayName,
                         humanAvatarId = profile.avatarId,
-                        humanColor = PlayerColor.RED,
+                        humanColor = chosenColor,
                         botCount = playerCount - 1,
                         difficulty = difficulty,
                         ruleSet = LudoRuleSet(
@@ -176,7 +184,16 @@ fun NeoLudoNavHost(
                     "ONLINE" -> FirebaseMultiplayerClient(
                         localPlayerId = profile.id,
                         localPlayerName = profile.displayName,
-                        localAvatarId = profile.avatarId
+                        localAvatarId = profile.avatarId,
+                        preferredColor = chosenColor,
+                        initialRoomId = roomId,
+                        maxPlayers = playerCount,
+                        ruleSet = LudoRuleSet(
+                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
+                            penalty3xSix = settings.penalty3xSix,
+                            turnTimerSeconds = settings.turnTimerSeconds
+                        ),
+                        autoStartMatch = true
                     )
                     else -> LocalMultiplayerClient(
                         playerCount = playerCount,

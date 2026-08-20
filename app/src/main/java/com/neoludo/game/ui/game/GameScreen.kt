@@ -1,8 +1,6 @@
 package com.neoludo.game.ui.game
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -24,11 +22,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.InsertEmoticon
+import androidx.compose.material.icons.filled.AddReaction
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -95,8 +96,7 @@ fun GameScreen(
                 if (event.value == 6) totalSixes++
             }
             is GameEngineEvent.PieceMoved -> {
-                soundController.play(SoundEffect.PIECE_STEP)
-                hapticController.perform(HapticType.LIGHT_TICK)
+                // Individual tile hops are handled smoothly by CanvasLudoBoard onStepHop
             }
             is GameEngineEvent.PieceCaptured -> {
                 soundController.play(SoundEffect.PIECE_CAPTURE)
@@ -125,7 +125,42 @@ fun GameScreen(
         activeFloatingEmote = null
     }
 
-    val state = gameState ?: return
+    val state = gameState
+
+    if (state == null) {
+        // Connecting / Initializing Arena Card (Never a blank screen)
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(NeoLudoColors.ObsidianBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    color = NeoLudoColors.CobaltBlue,
+                    modifier = Modifier.size(48.dp),
+                    strokeWidth = 4.dp
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "Entering Arena...",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Connecting players & initializing board",
+                    color = NeoLudoColors.ObsidianTextSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+        return
+    }
 
     Box(
         modifier = modifier
@@ -173,7 +208,7 @@ fun GameScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 3. Canvas Ludo Game Board
+            // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
@@ -184,6 +219,10 @@ fun GameScreen(
                         scope.launch {
                             client.movePiece(pieceId)
                         }
+                    },
+                    onStepHop = {
+                        soundController.play(SoundEffect.PIECE_STEP)
+                        hapticController.perform(HapticType.LIGHT_TICK)
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -226,7 +265,7 @@ fun GameScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 5. Turn Action Guidance & 3D Dice Tray
             TurnActionTray(
@@ -242,7 +281,7 @@ fun GameScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(26.dp))
         }
 
         // Quick Emote Picker Overlay
@@ -311,50 +350,48 @@ private fun GameTopHud(
         IconButton(
             onClick = onSurrenderClick,
             modifier = Modifier
-                .size(40.dp)
+                .size(42.dp)
                 .clip(CircleShape)
                 .background(NeoLudoColors.ObsidianSurfaceCard)
                 .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
         ) {
             Icon(
-                imageVector = Icons.Default.Close,
+                imageVector = Icons.Default.Flag,
                 contentDescription = "Surrender",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
+                tint = NeoLudoColors.RubyRed,
+                modifier = Modifier.size(20.dp)
             )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(
-                onClick = {
-                    soundController.soundEnabled = !soundController.soundEnabled
-                },
+                onClick = onEmoteClick,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(NeoLudoColors.ObsidianSurfaceCard)
                     .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
             ) {
                 Icon(
-                    imageVector = if (soundController.soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
-                    contentDescription = "Sound",
-                    tint = if (soundController.soundEnabled) NeoLudoColors.EmeraldGreen else Color.Gray,
-                    modifier = Modifier.size(18.dp)
+                    imageVector = Icons.Default.AddReaction,
+                    contentDescription = "Emotes",
+                    tint = NeoLudoColors.AmberYellow,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
             IconButton(
-                onClick = onEmoteClick,
+                onClick = { soundController.toggleSound() },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(NeoLudoColors.ObsidianSurfaceCard)
                     .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
             ) {
                 Icon(
-                    imageVector = Icons.Default.InsertEmoticon,
-                    contentDescription = "Emotes",
-                    tint = NeoLudoColors.AmberYellow,
+                    imageVector = if (soundController.isSoundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                    contentDescription = "Mute",
+                    tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -369,32 +406,75 @@ private fun TurnActionTray(
     onRollDice: () -> Unit
 ) {
     val active = state.activePlayer
-    val promptText = when {
-        active.isBot -> "${active.name} is thinking..."
-        state.turnPhase == TurnPhase.WAITING_FOR_ROLL -> "Your Turn • Tap Dice to Roll"
-        state.turnPhase == TurnPhase.WAITING_FOR_MOVE -> "Select a highlighted piece"
-        else -> ""
+    val playerColor = NeoLudoColors.getPlayerColor(active.color)
+
+    val promptTitle = when {
+        active.isBot -> "${active.name}'s Turn"
+        else -> "Your Turn • ${active.name}"
+    }
+
+    val promptInstruction = when (state.turnPhase) {
+        TurnPhase.WAITING_FOR_ROLL -> {
+            if (active.isBot) "Rolling the dice..." else "Tap Dice to Roll!"
+        }
+        TurnPhase.WAITING_FOR_MOVE -> {
+            val diceVal = state.diceState.value
+            val stepWord = if (diceVal == 1) "1 step" else "$diceVal steps"
+            if (active.isBot) "${active.name} advancing $stepWord" else "Rolled $diceVal • Tap glowing piece to advance $stepWord"
+        }
+        TurnPhase.AUTO_ADVANCING -> "Advancing piece..."
+        TurnPhase.GAME_OVER -> "Game Over!"
     }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        // Player Turn Badge Capsule
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = NeoLudoColors.ObsidianSurfaceCard,
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, playerColor.copy(alpha = 0.6f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(playerColor)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = promptTitle,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Action Guidance
         Text(
-            text = promptText,
-            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) Color.White else NeoLudoColors.ObsidianTextSecondary,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp
+            text = promptInstruction,
+            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianTextSecondary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // 3D Animated Dice
         Dice3DRenderer(
             diceState = state.diceState,
             playerColor = active.color,
             isRolling = isRolling,
             onRollClick = onRollDice,
-            sizeDp = 76.dp
+            sizeDp = 78.dp
         )
     }
 }

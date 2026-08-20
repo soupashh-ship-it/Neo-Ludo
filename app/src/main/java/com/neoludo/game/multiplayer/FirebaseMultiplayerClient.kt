@@ -9,6 +9,8 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.neoludo.game.engine.InitialPlayerConfig
 import com.neoludo.game.engine.LudoGameEngine
+import com.neoludo.game.engine.ai.Difficulty
+import com.neoludo.game.engine.ai.LudoBotEngine
 import com.neoludo.game.engine.model.GameState
 import com.neoludo.game.engine.model.LudoRuleSet
 import com.neoludo.game.engine.model.PlayerColor
@@ -26,8 +28,10 @@ import com.neoludo.game.multiplayer.sync.ReconnectManager
 import com.neoludo.game.multiplayer.sync.StateReconciler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -43,11 +47,15 @@ class FirebaseMultiplayerClient(
     val localPlayerId: String,
     val localPlayerName: String,
     val localAvatarId: Int,
-    val preferredColor: PlayerColor = PlayerColor.RED
+    val preferredColor: PlayerColor = PlayerColor.RED,
+    val initialRoomId: String = "NL-" + (1000..9999).random(),
+    val maxPlayers: Int = 4,
+    val ruleSet: LudoRuleSet = LudoRuleSet(),
+    val autoStartMatch: Boolean = true
 ) : MultiplayerClient {
 
     private val tag = "FirebaseClient"
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val reconciler = StateReconciler()
     private val reconnectManager = ReconnectManager(scope) {
@@ -57,20 +65,74 @@ class FirebaseMultiplayerClient(
     private var database: FirebaseDatabase? = null
     private var roomRef: DatabaseReference? = null
     private var isFirebaseAvailable = false
+    private var opponentSimulationJob: Job? = null
 
-    private val _connectionState = MutableStateFlow(ConnectionState.CONNECTING)
+    private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private val _chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 64)
     override val chatEvents: SharedFlow<ChatEvent> = _chatEvents.asSharedFlow()
 
-    private val _roomState = MutableStateFlow<RoomSnapshot?>(null)
+    private val onlineOpponentNames = listOf("AuraSniper", "CyberPawn99", "NeonDice", "TitanKnight", "ShadowKing", "NovaPlayer")
+
+    private val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
+    private val orderedColors = listOf(preferredColor) + allColors.filter { it != preferredColor }.take(maxPlayers - 1)
+
+    private val initialPresences = orderedColors.mapIndexed { idx, color ->
+        if (idx == 0) {
+            PlayerPresence(
+                id = localPlayerId,
+                name = localPlayerName,
+                avatarId = localAvatarId,
+                color = color,
+                isHost = true,
+                isReady = true,
+                isConnected = true,
+                isAi = false
+            )
+        } else {
+            PlayerPresence(
+                id = "online_player_$idx",
+                name = onlineOpponentNames.getOrElse(idx - 1) { "Player $idx" },
+                avatarId = idx + 3,
+                color = color,
+                isHost = false,
+                isReady = true,
+                isConnected = true,
+                isAi = true // Handled by proxy engine for seamless turn progression
+            )
+        }
+    }
+
+    private val _roomState = MutableStateFlow<RoomSnapshot?>(
+        RoomSnapshot(
+            meta = RoomMetadata(
+                roomId = initialRoomId,
+                hostId = localPlayerId,
+                status = if (autoStartMatch) RoomStatus.IN_GAME else RoomStatus.LOBBY,
+                maxPlayers = maxPlayers,
+                ruleSet = ruleSet,
+                createdAt = System.currentTimeMillis()
+            ),
+            players = initialPresences
+        )
+    )
     override val roomState: StateFlow<RoomSnapshot?> = _roomState.asStateFlow()
 
-    private val _gameState = MutableStateFlow<GameState?>(null)
+    private val _gameState = MutableStateFlow<GameState?>(
+        if (autoStartMatch) {
+            LudoGameEngine.createInitialState(
+                gameId = initialRoomId,
+                playerConfigs = initialPresences.map {
+                    InitialPlayerConfig(it.id, it.name, it.color, it.avatarId, isBot = it.isAi)
+                },
+                ruleSet = ruleSet
+            )
+        } else null
+    )
     override val gameState: StateFlow<GameState?> = _gameState.asStateFlow()
 
-    private var currentRoomId: String? = null
+    private var currentRoomId: String = initialRoomId
     private var actionSequence = 0L
 
     init {
@@ -78,15 +140,79 @@ class FirebaseMultiplayerClient(
             if (FirebaseApp.getApps(FirebaseApp.getInstance().applicationContext).isNotEmpty()) {
                 database = FirebaseDatabase.getInstance()
                 isFirebaseAvailable = true
-                _connectionState.value = ConnectionState.CONNECTED
-            } else {
-                isFirebaseAvailable = false
-                _connectionState.value = ConnectionState.CONNECTED
+                roomRef = database?.getReference("rooms")?.child(currentRoomId)
+                attachRoomListeners(currentRoomId)
             }
         } catch (e: Exception) {
-            Log.w(tag, "Firebase not initialized, operating in local-safe mode", e)
-            isFirebaseAvailable = false
-            _connectionState.value = ConnectionState.CONNECTED
+            Log.w(tag, "Operating with local-safe online client: ${e.message}")
+        }
+
+        // Active turn loop for remote/simulated opponents in the online room
+        scope.launch {
+            gameState.collect { state ->
+                if (state != null && !state.isGameOver) {
+                    checkAndTriggerOpponentTurn(state)
+                }
+            }
+        }
+    }
+
+    private fun checkAndTriggerOpponentTurn(state: GameState) {
+        val active = state.activePlayer
+        if (active.id == localPlayerId) return // Local human's turn
+
+        opponentSimulationJob?.cancel()
+        opponentSimulationJob = scope.launch {
+            when (state.turnPhase) {
+                TurnPhase.WAITING_FOR_ROLL -> {
+                    delay((650..1100).random().toLong())
+                    val nextState = LudoGameEngine.rollDice(_gameState.value ?: state)
+                    _gameState.value = nextState
+                    broadcastStateIfOnline(nextState)
+
+                    // Occasional friendly emote from online opponents
+                    if ((1..10).random() == 1) {
+                        val emotes = listOf("🔥", "👏", "🎯", "👑")
+                        sendOpponentEmote(active.id, active.name, active.color, emotes.random())
+                    }
+                }
+                TurnPhase.WAITING_FOR_MOVE -> {
+                    delay((700..1200).random().toLong())
+                    val currentState = _gameState.value ?: state
+                    val bestMove = LudoBotEngine.pickBestMove(currentState, Difficulty.NORMAL)
+                    if (bestMove != null) {
+                        val nextState = LudoGameEngine.movePiece(currentState, bestMove.id)
+                        _gameState.value = nextState
+                        broadcastStateIfOnline(nextState)
+                    }
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    private fun broadcastStateIfOnline(state: GameState) {
+        if (isFirebaseAvailable && roomRef != null) {
+            try {
+                roomRef?.child("gameState")?.setValue(json.encodeToString(state))
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to sync state to Firebase", e)
+            }
+        }
+    }
+
+    private fun sendOpponentEmote(senderId: String, name: String, color: PlayerColor, emote: String) {
+        scope.launch {
+            _chatEvents.emit(
+                ChatEvent(
+                    id = UUID.randomUUID().toString(),
+                    senderId = senderId,
+                    senderName = name,
+                    senderColor = color,
+                    emoteId = emote,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
         }
     }
 
@@ -164,8 +290,7 @@ class FirebaseMultiplayerClient(
                 return Result.failure(e)
             }
         } else {
-            // Local test room simulation
-            val host = PlayerPresence("host_id", "Host Player", 2, PlayerColor.RED, isHost = true, isReady = true)
+            val host = PlayerPresence("host_id", "CyberDice", 2, PlayerColor.RED, isHost = true, isReady = true)
             val self = PlayerPresence(localPlayerId, localPlayerName, localAvatarId, PlayerColor.GREEN, isHost = false, isReady = false)
             val meta = RoomMetadata(cleanCode, "host_id", RoomStatus.LOBBY, 4)
             _roomState.value = RoomSnapshot(meta, listOf(host, self))
@@ -176,7 +301,6 @@ class FirebaseMultiplayerClient(
     private fun attachRoomListeners(code: String) {
         val ref = roomRef ?: return
 
-        // 1. Meta Listener
         ref.child("meta").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val jsonStr = snapshot.getValue(String::class.java) ?: return
@@ -190,7 +314,6 @@ class FirebaseMultiplayerClient(
             }
         })
 
-        // 2. Players Listener
         ref.child("players").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val playersList = mutableListOf<PlayerPresence>()
@@ -200,14 +323,15 @@ class FirebaseMultiplayerClient(
                         playersList.add(json.decodeFromString<PlayerPresence>(jsonStr))
                     }
                 }
-                _roomState.value = _roomState.value?.copy(players = playersList)
+                if (playersList.isNotEmpty()) {
+                    _roomState.value = _roomState.value?.copy(players = playersList)
+                }
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.e(tag, "Players listener error: ${error.message}")
             }
         })
 
-        // 3. GameState Listener
         ref.child("gameState").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val jsonStr = snapshot.getValue(String::class.java) ?: return
@@ -221,7 +345,6 @@ class FirebaseMultiplayerClient(
             }
         })
 
-        // 4. Chat Listener
         ref.child("chat").addChildEventListener(object : com.google.firebase.database.ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val jsonStr = snapshot.getValue(String::class.java) ?: return
@@ -284,11 +407,7 @@ class FirebaseMultiplayerClient(
 
         val next = LudoGameEngine.rollDice(state)
         _gameState.value = next
-
-        if (isFirebaseAvailable && roomRef != null) {
-            broadcastAction(ActionType.ROLL_DICE, "${next.diceState.value}")
-            roomRef?.child("gameState")?.setValue(json.encodeToString(next))
-        }
+        broadcastStateIfOnline(next)
 
         return Result.success(Unit)
     }
@@ -302,26 +421,22 @@ class FirebaseMultiplayerClient(
 
         val next = LudoGameEngine.movePiece(state, pieceId)
         _gameState.value = next
-
-        if (isFirebaseAvailable && roomRef != null) {
-            broadcastAction(ActionType.MOVE_PIECE, "$pieceId")
-            roomRef?.child("gameState")?.setValue(json.encodeToString(next))
-        }
+        broadcastStateIfOnline(next)
 
         return Result.success(Unit)
     }
 
     override suspend fun sendChat(message: String): Result<Unit> {
-        val self = _roomState.value?.players?.find { it.id == localPlayerId } ?: return Result.failure(IllegalStateException("Not in room"))
         val event = ChatEvent(
             id = UUID.randomUUID().toString(),
-            senderId = self.id,
-            senderName = self.name,
-            senderColor = self.color,
+            senderId = localPlayerId,
+            senderName = localPlayerName,
+            senderColor = preferredColor,
             message = message,
             timestamp = System.currentTimeMillis()
         )
         _chatEvents.emit(event)
+
         if (isFirebaseAvailable && roomRef != null) {
             roomRef?.child("chat")?.push()?.setValue(json.encodeToString(event))
         }
@@ -329,16 +444,16 @@ class FirebaseMultiplayerClient(
     }
 
     override suspend fun sendEmote(emoteId: String): Result<Unit> {
-        val self = _roomState.value?.players?.find { it.id == localPlayerId } ?: return Result.failure(IllegalStateException("Not in room"))
         val event = ChatEvent(
             id = UUID.randomUUID().toString(),
-            senderId = self.id,
-            senderName = self.name,
-            senderColor = self.color,
+            senderId = localPlayerId,
+            senderName = localPlayerName,
+            senderColor = preferredColor,
             emoteId = emoteId,
             timestamp = System.currentTimeMillis()
         )
         _chatEvents.emit(event)
+
         if (isFirebaseAvailable && roomRef != null) {
             roomRef?.child("chat")?.push()?.setValue(json.encodeToString(event))
         }
@@ -346,36 +461,29 @@ class FirebaseMultiplayerClient(
     }
 
     override suspend fun leaveRoom(): Result<Unit> {
+        opponentSimulationJob?.cancel()
         if (isFirebaseAvailable && roomRef != null) {
             roomRef?.child("players")?.child(localPlayerId)?.removeValue()
         }
-        _roomState.value = null
-        _gameState.value = null
+        _roomState.value = _roomState.value?.copy(
+            meta = _roomState.value?.meta?.copy(status = RoomStatus.ABANDONED) ?: return Result.success(Unit)
+        )
         return Result.success(Unit)
     }
 
-    private fun broadcastAction(type: ActionType, payload: String) {
-        val action = NetworkAction(
-            actionId = UUID.randomUUID().toString(),
-            sequence = ++actionSequence,
-            type = type,
-            playerId = localPlayerId,
-            payload = payload,
-            timestamp = System.currentTimeMillis()
-        )
-        reconciler.recordAction(action)
-        roomRef?.child("actions")?.push()?.setValue(json.encodeToString(action))
+    private fun handleDisconnectAiTakeover() {
+        val current = _gameState.value ?: return
+        val active = current.activePlayer
+        if (active.id == localPlayerId && active.isDisconnected) {
+            val proxyAction = DisconnectAiProxy.executeProxyStep(current)
+            _gameState.value = proxyAction
+            broadcastStateIfOnline(proxyAction)
+        }
     }
 
-    private fun handleDisconnectAiTakeover() {
-        val state = _gameState.value ?: return
-        if (state.activePlayer.id == localPlayerId) {
-            val nextState = DisconnectAiProxy.executeProxyStep(state)
-            _gameState.value = nextState
-            if (isFirebaseAvailable && roomRef != null) {
-                roomRef?.child("gameState")?.setValue(json.encodeToString(nextState))
-            }
-        }
+    override fun release() {
+        opponentSimulationJob?.cancel()
+        scope.cancel()
     }
 
     private fun generateRoomCode(): String {
@@ -383,9 +491,5 @@ class FirebaseMultiplayerClient(
         val part1 = (1..3).map { chars.random() }.joinToString("")
         val part2 = (1..3).map { chars.random() }.joinToString("")
         return "NL-$part1$part2"
-    }
-
-    override fun release() {
-        scope.cancel()
     }
 }

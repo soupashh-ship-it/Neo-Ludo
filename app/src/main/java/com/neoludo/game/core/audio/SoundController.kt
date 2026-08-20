@@ -24,6 +24,13 @@ class SoundController(private val context: Context) {
     var soundVolume: Float = 1.0f
     var soundEnabled: Boolean = true
 
+    val isSoundEnabled: Boolean get() = soundEnabled
+
+    fun toggleSound(): Boolean {
+        soundEnabled = !soundEnabled
+        return soundEnabled
+    }
+
     init {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)

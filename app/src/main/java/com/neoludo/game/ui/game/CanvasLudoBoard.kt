@@ -1,6 +1,8 @@
 package com.neoludo.game.ui.game
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -12,7 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -32,13 +39,23 @@ import com.neoludo.game.engine.model.PiecePosition
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.TurnPhase
 import com.neoludo.game.engine.rules.MoveValidator
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+data class ActivePieceHopState(
+    val pieceId: Int,
+    val color: PlayerColor,
+    val steps: List<PiecePosition>,
+    val currentStepIndex: Int,
+    val progress: Float
+)
 
 @Composable
 fun CanvasLudoBoard(
     gameState: GameState,
     onPieceClick: (pieceId: Int) -> Unit,
+    onStepHop: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "board_halo")
@@ -57,6 +74,48 @@ fun CanvasLudoBoard(
             .map { it.piece.id }
             .toSet()
     } else emptySet()
+
+    // Animation tracking for step-by-step hopping
+    var activeHop by remember { mutableStateOf<ActivePieceHopState?>(null) }
+    val stepAnimProgress = remember { Animatable(0f) }
+    var lastPiecePositions by remember {
+        mutableStateOf(
+            gameState.players.flatMap { it.pieces }.associate { it.id to it.position }
+        )
+    }
+
+    LaunchedEffect(gameState) {
+        val currentPositions = gameState.players.flatMap { it.pieces }.associate { it.id to it.position }
+        for (player in gameState.players) {
+            for (piece in player.pieces) {
+                val oldPos = lastPiecePositions[piece.id]
+                val newPos = piece.position
+                if (oldPos != null && oldPos != newPos) {
+                    val intermediate = BoardCoordinates.getIntermediatePositions(player.color, oldPos, newPos)
+                    if (intermediate.size > 1) {
+                        // Animate tile by tile
+                        for (i in 0 until intermediate.size - 1) {
+                            activeHop = ActivePieceHopState(
+                                pieceId = piece.id,
+                                color = player.color,
+                                steps = intermediate,
+                                currentStepIndex = i,
+                                progress = 0f
+                            )
+                            onStepHop()
+                            stepAnimProgress.snapTo(0f)
+                            stepAnimProgress.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(135, easing = LinearOutSlowInEasing)
+                            )
+                        }
+                        activeHop = null
+                    }
+                }
+            }
+        }
+        lastPiecePositions = currentPositions
+    }
 
     Box(modifier = modifier.aspectRatio(1f)) {
         Canvas(
@@ -94,13 +153,23 @@ fun CanvasLudoBoard(
             // 4. Draw Center Home Quadrant Prism
             drawCenterHomePrism(cellSize)
 
-            // 5. Draw Pieces
-            drawAllPieces(
+            // 5. Draw Stationary Pieces
+            drawAllStationaryPieces(
                 gameState = gameState,
                 cellSize = cellSize,
                 selectablePieceIds = selectablePieceIds,
+                activeHopPieceId = activeHop?.pieceId,
                 haloScale = haloPulse
             )
+
+            // 6. Draw Active Hopping Piece with Parabolic Bounce
+            activeHop?.let { hop ->
+                drawHoppingPiece(
+                    hopState = hop,
+                    stepProgress = stepAnimProgress.value,
+                    cellSize = cellSize
+                )
+            }
         }
     }
 }
@@ -188,7 +257,6 @@ private fun DrawScope.drawYardBase(
         val center = Offset(c * cellSize + cellSize / 2f, r * cellSize + cellSize / 2f)
         val radius = cellSize * 0.65f
 
-        // Outer Slot Ring
         drawCircle(
             color = NeoLudoColors.ObsidianBackground,
             radius = radius,
@@ -219,7 +287,7 @@ private fun DrawScope.drawPathwayCells(cellSize: Float) {
             else -> NeoLudoColors.ObsidianSurfaceCard
         }
 
-        // Draw tile background
+        // Tile background
         drawRoundRect(
             color = cellColor,
             topLeft = Offset(topLeft.x + 1.5f, topLeft.y + 1.5f),
@@ -227,7 +295,7 @@ private fun DrawScope.drawPathwayCells(cellSize: Float) {
             cornerRadius = CornerRadius(8f, 8f)
         )
 
-        // Draw tile border
+        // Tile border
         drawRoundRect(
             color = NeoLudoColors.ObsidianBorder,
             topLeft = Offset(topLeft.x + 1.5f, topLeft.y + 1.5f),
@@ -236,7 +304,7 @@ private fun DrawScope.drawPathwayCells(cellSize: Float) {
             style = Stroke(width = 1f)
         )
 
-        // Draw Star on safe cell
+        // Star on safe cells
         if (isSafeStar) {
             drawStarIcon(
                 center = Offset(topLeft.x + cellSize / 2f, topLeft.y + cellSize / 2f),
@@ -245,7 +313,7 @@ private fun DrawScope.drawPathwayCells(cellSize: Float) {
             )
         }
 
-        // Draw Color Dot on Start Cells
+        // Color Dot on Start Cells
         if (isStartCell) {
             val dotColor = when (index) {
                 0 -> NeoLudoColors.RubyRed
@@ -295,7 +363,6 @@ private fun DrawScope.drawCenterHomePrism(cellSize: Float) {
     val centerSize = Size(cellSize * 3f, cellSize * 3f)
     val center = Offset(centerTopLeft.x + centerSize.width / 2f, centerTopLeft.y + centerSize.height / 2f)
 
-    // 4 Colored Interlocking Triangles
     // Red Triangle (Left)
     val redPath = Path().apply {
         moveTo(centerTopLeft.x, centerTopLeft.y)
@@ -303,7 +370,7 @@ private fun DrawScope.drawCenterHomePrism(cellSize: Float) {
         lineTo(centerTopLeft.x, centerTopLeft.y + centerSize.height)
         close()
     }
-    drawPath(redPath, NeoLudoColors.RubyRed.copy(alpha = 0.65f))
+    drawPath(redPath, NeoLudoColors.RubyRed.copy(alpha = 0.85f))
 
     // Green Triangle (Top)
     val greenPath = Path().apply {
@@ -312,7 +379,7 @@ private fun DrawScope.drawCenterHomePrism(cellSize: Float) {
         lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y)
         close()
     }
-    drawPath(greenPath, NeoLudoColors.EmeraldGreen.copy(alpha = 0.65f))
+    drawPath(greenPath, NeoLudoColors.EmeraldGreen.copy(alpha = 0.85f))
 
     // Yellow Triangle (Right)
     val yellowPath = Path().apply {
@@ -321,7 +388,7 @@ private fun DrawScope.drawCenterHomePrism(cellSize: Float) {
         lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y + centerSize.height)
         close()
     }
-    drawPath(yellowPath, NeoLudoColors.AmberYellow.copy(alpha = 0.65f))
+    drawPath(yellowPath, NeoLudoColors.AmberYellow.copy(alpha = 0.85f))
 
     // Blue Triangle (Bottom)
     val bluePath = Path().apply {
@@ -330,9 +397,11 @@ private fun DrawScope.drawCenterHomePrism(cellSize: Float) {
         lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y + centerSize.height)
         close()
     }
-    drawPath(bluePath, NeoLudoColors.CobaltBlue.copy(alpha = 0.65f))
+    drawPath(bluePath, NeoLudoColors.CobaltBlue.copy(alpha = 0.85f))
 
-    // Center faceted diamond
+    // Center Gold Star
+    drawCircle(NeoLudoColors.ObsidianSurfaceCard, cellSize * 0.65f, center)
+    drawCircle(Color.White.copy(alpha = 0.7f), cellSize * 0.65f, center, style = Stroke(2f))
     drawStarIcon(center, cellSize * 0.45f, Color.White)
 }
 
@@ -353,18 +422,20 @@ private fun DrawScope.drawStarIcon(center: Offset, radius: Float, color: Color) 
     drawPath(path, color, style = Fill)
 }
 
-private fun DrawScope.drawAllPieces(
+private fun DrawScope.drawAllStationaryPieces(
     gameState: GameState,
     cellSize: Float,
     selectablePieceIds: Set<Int>,
+    activeHopPieceId: Int?,
     haloScale: Float
 ) {
-    // Group pieces by their rendered board coordinate to apply clustered arrangement
-    val allActivePieces = gameState.players.flatMap { player ->
-        player.pieces.map { piece -> Triple(player, piece, BoardCoordinates.getGridCoordForPosition(player.color, piece.position)) }
+    val allPieces = gameState.players.flatMap { player ->
+        player.pieces
+            .filter { it.id != activeHopPieceId }
+            .map { piece -> Triple(player, piece, BoardCoordinates.getGridCoordForPosition(player.color, piece.position)) }
     }
 
-    val groupedByCoord = allActivePieces.groupBy { it.third }
+    val groupedByCoord = allPieces.groupBy { it.third }
 
     groupedByCoord.forEach { (_, piecesAtCell) ->
         val count = piecesAtCell.size
@@ -374,7 +445,6 @@ private fun DrawScope.drawAllPieces(
                 coord.first * cellSize + cellSize / 2f
             )
 
-            // Offset clustered pieces if more than 1 piece on the same tile
             val pieceCenter = if (count > 1) {
                 val clusterRadius = cellSize * 0.22f
                 val angle = (index.toDouble() / count.toDouble()) * (Math.PI * 2.0)
@@ -398,6 +468,53 @@ private fun DrawScope.drawAllPieces(
             )
         }
     }
+}
+
+private fun DrawScope.drawHoppingPiece(
+    hopState: ActivePieceHopState,
+    stepProgress: Float,
+    cellSize: Float
+) {
+    val stepFrom = hopState.steps.getOrNull(hopState.currentStepIndex) ?: return
+    val stepTo = hopState.steps.getOrNull(hopState.currentStepIndex + 1) ?: stepFrom
+
+    val (rFrom, cFrom) = BoardCoordinates.getGridCoordForPosition(hopState.color, stepFrom)
+    val (rTo, cTo) = BoardCoordinates.getGridCoordForPosition(hopState.color, stepTo)
+
+    val currentR = (1f - stepProgress) * rFrom + stepProgress * rTo
+    val currentC = (1f - stepProgress) * cFrom + stepProgress * cTo
+
+    val baseCenter = Offset(
+        currentC * cellSize + cellSize / 2f,
+        currentR * cellSize + cellSize / 2f
+    )
+
+    // Parabolic vertical jump arc: max jump height at progress = 0.5
+    val jumpArc = -(sin(stepProgress * PI) * (cellSize * 0.5f)).toFloat()
+    val animatedCenter = Offset(baseCenter.x, baseCenter.y + jumpArc)
+
+    // Scale bounce during jump
+    val scale = 1.0f + (sin(stepProgress * PI) * 0.28f).toFloat()
+    val baseRadius = cellSize * 0.36f
+    val pieceRadius = baseRadius * scale
+
+    // Dynamic ground shadow directly under the hopping piece
+    val shadowAlpha = (0.45f * (1f - 0.35f * sin(stepProgress * PI))).toFloat()
+    val shadowRadius = (baseRadius * (1f - 0.2f * sin(stepProgress * PI))).toFloat()
+    drawCircle(
+        color = Color.Black.copy(alpha = shadowAlpha),
+        radius = shadowRadius,
+        center = Offset(baseCenter.x + 2f, baseCenter.y + 3f)
+    )
+
+    // Draw the elevated hopping piece
+    drawSinglePiece(
+        center = animatedCenter,
+        radius = pieceRadius,
+        color = NeoLudoColors.getPlayerColor(hopState.color),
+        isSelectable = false,
+        haloScale = 1f
+    )
 }
 
 private fun DrawScope.drawSinglePiece(

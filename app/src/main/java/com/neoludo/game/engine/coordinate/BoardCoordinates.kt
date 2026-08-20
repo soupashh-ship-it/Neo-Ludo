@@ -132,4 +132,37 @@ object BoardCoordinates {
             is PiecePosition.Home -> HOME_CENTER_COORD.row.toFloat() to HOME_CENTER_COORD.col.toFloat()
         }
     }
+
+    fun getIntermediatePositions(
+        color: PlayerColor,
+        from: PiecePosition,
+        to: PiecePosition
+    ): List<PiecePosition> {
+        if (from == to) return listOf(from)
+
+        return when {
+            from is PiecePosition.Yard && to is PiecePosition.Path -> {
+                listOf(from, PiecePosition.Path(0))
+            }
+            from is PiecePosition.Path && to is PiecePosition.Path -> {
+                if (to.step > from.step) {
+                    listOf(from) + (from.step + 1..to.step).map { PiecePosition.Path(it) }
+                } else {
+                    listOf(from, to)
+                }
+            }
+            from is PiecePosition.Path && to is PiecePosition.Home -> {
+                val list = mutableListOf<PiecePosition>(from)
+                for (s in (from.step + 1)..55) {
+                    list.add(PiecePosition.Path(s))
+                }
+                list.add(PiecePosition.Home)
+                list
+            }
+            from is PiecePosition.Path && to is PiecePosition.Yard -> {
+                listOf(from, to)
+            }
+            else -> listOf(from, to)
+        }
+    }
 }
