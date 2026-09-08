@@ -477,15 +477,9 @@ class FirebaseMultiplayerClient(
             return "NL-$randomPart"
         }
 
-        fun normalizeRoomCode(raw: String): String {
-            val stripped = raw.trim().uppercase()
-                .replace(" ", "")
-                .replace("-", "")
-            return if (stripped.startsWith("NL")) {
-                "NL-" + stripped.removePrefix("NL")
-            } else {
-                "NL-$stripped"
-            }
-        }
+        // Single hardened implementation (chat-app paste junk, full shared
+        // messages) lives on the relay; Firebase rooms share the code format.
+        fun normalizeRoomCode(raw: String): String =
+            com.neoludo.game.multiplayer.backend.MqttRelay.normalizeRoomCode(raw)
     }
 }

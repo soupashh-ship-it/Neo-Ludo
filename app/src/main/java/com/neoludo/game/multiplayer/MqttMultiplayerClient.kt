@@ -63,7 +63,7 @@ class MqttMultiplayerClient(
     val initialRoomId: String = MqttRelay.generateRoomCode(),
     override val maxPlayers: Int = 4,
     val ruleSet: LudoRuleSet = LudoRuleSet(),
-    private val relay: MqttRelayDataSource = MqttRelayDataSource()
+    internal val relay: MqttRelayDataSource = MqttRelayDataSource()
 ) : OnlineRoomClient {
 
     private val tag = "MqttMultiplayerClient"
@@ -257,9 +257,13 @@ class MqttMultiplayerClient(
         currentRoomId = code
         attachListeners(code)
 
-        // Seed players from retained presence docs.
+        // Seed players from retained presence docs. A room always holds its
+        // host, so an empty result means our window missed the retained docs
+        // (slow network) — wait out one more round rather than joining blind
+        // (blind joins pick clashing colors and break game start).
         val now = System.currentTimeMillis()
-        val known = fetchPlayers(code)
+        var known = fetchPlayers(code)
+        if (known.isEmpty()) known = fetchPlayers(code, extraWaitMs = 2000L)
         // Cloned installs share one id: if OUR seat is heartbeating, another
         // live device owns it — mint a fresh id instead of stealing the seat.
         currentUid = JoinUidResolver.resolve(currentUid, known, now)
@@ -348,7 +352,32 @@ class MqttMultiplayerClient(
         if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) {
             return@withContext Result.failure(RoomError.NotHost)
         }
-        val initResult = authoritativeProcessor.initializeGame(snap.meta, snap.players)
+        // Never throw out of here (a throw from the tap handler crashes the
+        // app): sanitize the roster and convert violations into lobby errors.
+        val players = sanitizePlayersForStart(snap.players)
+            ?: return@withContext Result.failure(
+                RoomError.NetworkFailure(
+                    "Need 2 to 4 players with different colors to start. " +
+                        "Wait for everyone to appear below and retry."
+                )
+            )
+        val initResult = runCatching { authoritativeProcessor.initializeGame(snap.meta, players) }.getOrElse {
+            return@withContext Result.failure(
+                RoomError.NetworkFailure("Could not start the game. Please retry.")
+            )
+        }
+        // Publish back any host-remapped colors so plates match the board.
+        val now = System.currentTimeMillis()
+        val originalColors = snap.players.associate { it.id to it.color }
+        players.forEach { p ->
+            if (originalColors[p.id] != null && originalColors[p.id] != p.color) {
+                relay.publish(
+                    MqttRelay.presenceTopic(snap.meta.roomId, p.id),
+                    relay.json.encodeToString(p.copy(lastSeen = now)),
+                    retained = true
+                )
+            }
+        }
         _gameState.value = initResult.updatedState
         publishMeta(initResult.updatedMeta ?: snap.meta)
         publishState(initResult.updatedState)
@@ -537,7 +566,7 @@ class MqttMultiplayerClient(
         return false
     }
 
-    private suspend fun fetchPlayers(code: String): Map<String, PlayerPresence> {
+    private suspend fun fetchPlayers(code: String, extraWaitMs: Long = 0L): Map<String, PlayerPresence> {
         // Retained presence docs arrive on wildcard subscribe; collect briefly.
         val found = mutableMapOf<String, PlayerPresence>()
         val handler: (String, String) -> Unit = { topic, payload ->
@@ -550,7 +579,7 @@ class MqttMultiplayerClient(
         }
         relay.subscribePrefix(MqttRelay.playersPrefix(code), handler = handler)
         try {
-            delay(2000L)
+            delay(2000L + extraWaitMs)
         } finally {
             relay.unsubscribePrefix(MqttRelay.playersPrefix(code), handler)
         }
@@ -631,6 +660,17 @@ class MqttMultiplayerClient(
                     // nothing goes out (peers will soon see us as offline
                     // via the Last-Will). Drop it and rejoin the room server.
                     handleLinkFailure()
+                    continue
+                }
+                // Hosts refresh the room meta so late joiners find the room
+                // even if the broker restarted and dropped retained messages.
+                val meta = synchronized(snapshotLock) { latestMeta }
+                if (meta != null && meta.hostId == currentUid && meta.status == RoomStatus.LOBBY) {
+                    relay.publish(
+                        MqttRelay.metaTopic(c),
+                        relay.json.encodeToString(meta.copy(updatedAt = System.currentTimeMillis())),
+                        retained = true
+                    )
                 }
             }
         }
@@ -809,4 +849,28 @@ class MqttMultiplayerClient(
 
     private suspend fun postAction(roomId: String, action: NetworkAction): Result<Unit> =
         relay.publish(MqttRelay.actionsTopic(roomId), relay.json.encodeToString(action))
+}
+
+/**
+ * Roster guard for game start. Slow networks can deliver a skewed presence
+ * set (e.g. the host's seat missed during join, so both phones picked the
+ * same color) — and `createInitialState` answers that with `require`
+ * crashes. Keep join order, remap duplicate colors deterministically, and
+ * return null when no valid game is possible (caller shows a lobby error
+ * instead of crashing).
+ */
+internal fun sanitizePlayersForStart(players: List<PlayerPresence>): List<PlayerPresence>? {
+    val distinct = players.distinctBy { it.id }
+    if (distinct.size < 2 || distinct.size > 4) return null
+    val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
+    val used = mutableSetOf<PlayerColor>()
+    val free = ArrayDeque(allColors.filter { c -> distinct.none { it.color == c } })
+    return distinct.map { p ->
+        if (used.add(p.color)) p
+        else {
+            val replacement = free.removeFirstOrNull() ?: return null
+            used.add(replacement)
+            p.copy(color = replacement)
+        }
+    }
 }

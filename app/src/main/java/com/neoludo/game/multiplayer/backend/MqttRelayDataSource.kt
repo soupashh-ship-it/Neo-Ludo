@@ -323,7 +323,7 @@ class MqttRelayDataSource {
      * Fast path first: when already connected, one cheap lookup on the live
      * link (~1.2s) before fanning out to short-lived probe connections.
      */
-    suspend fun fetchRetainedFromAny(topic: String, timeoutMs: Long = 9000L): RelayLookup {
+    suspend fun fetchRetainedFromAny(topic: String, timeoutMs: Long = 12000L): RelayLookup {
         awaitRetained(topic, 1200L)?.let { payload ->
             connectedServer()?.let { MqttRelay.pinServer(it) }
             return RelayLookup.Found(payload, connectedServer() ?: "")
