@@ -36,6 +36,28 @@ class ProfileRepository(private val dataStore: PreferencesDataStore) {
 
     suspend fun getProfile(): UserProfile = dataStore.profileFlow.first()
 
+    /**
+     * Fresh installs start with an UNSAVED default profile whose id is
+     * re-minted (`user_XXXX`, only 9000 values) on every DataStore emission —
+     * any settings write would silently change your online identity
+     * mid-session and break seat matching (or collide with a friend's id).
+     * Mint one UUID-based id and persist it exactly once at startup.
+     */
+    suspend fun ensureStableProfile(): UserProfile = mutex.withLock {
+        if (!dataStore.hasSavedProfile()) {
+            val fresh = UserProfile(id = "user_" + java.util.UUID.randomUUID().toString().take(8))
+            dataStore.saveProfile(fresh)
+            fresh
+        } else {
+            val current = dataStore.profileFlow.first()
+            if (current.id.isBlank()) {
+                val fixed = current.copy(id = "user_" + java.util.UUID.randomUUID().toString().take(8))
+                dataStore.saveProfile(fixed)
+                fixed
+            } else current
+        }
+    }
+
     suspend fun updateProfile(profile: UserProfile) {
         mutex.withLock { dataStore.saveProfile(profile) }
     }

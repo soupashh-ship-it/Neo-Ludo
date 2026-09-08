@@ -96,6 +96,9 @@ class PreferencesDataStore(private val context: Context) {
         }
     }
 
+    suspend fun hasSavedProfile(): Boolean =
+        context.dataStore.data.map { it[USER_PROFILE_JSON] != null }.first()
+
     val statsFlow: Flow<UserStats> = context.dataStore.data.map { prefs ->
         prefs[USER_STATS_JSON]?.let {
             runCatching { json.decodeFromString<UserStats>(it) }.getOrNull()

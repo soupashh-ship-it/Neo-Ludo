@@ -449,6 +449,12 @@ class FirebaseMultiplayerClient(
         Result.success(Unit)
     }
 
+    override suspend fun refreshConnection(): Result<Unit> {
+        // Firebase RTDB owns its socket and auto-reconnects; re-assert state.
+        reconnectManager.onConnected()
+        return Result.success(Unit)
+    }
+
     override fun release() {
         botTurnJob?.cancel()
         timeoutJob?.cancel()

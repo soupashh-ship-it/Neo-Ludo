@@ -82,6 +82,10 @@ fun NeoLudoNavHost(
     var activeOnlineClient by remember { mutableStateOf<OnlineRoomClient?>(null) }
     var lastGameRoute by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        // Pin the online identity before any room is created/joined.
+        runCatching { app.profileRepository.ensureStableProfile() }
+    }
     LaunchedEffect(settings.soundVolume, settings.soundEnabled, settings.hapticsEnabled) {
         app.soundController.soundVolume = settings.soundVolume
         app.soundController.soundEnabled = settings.soundEnabled

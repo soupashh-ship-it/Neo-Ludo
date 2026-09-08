@@ -38,6 +38,9 @@ canonical turns, late joiners catch up from the retained snapshot, and presence
 4. Host taps **Start Game** (can fill empty seats with bots).
 
 Notes & limits:
+- Everyone in a room converges on one relay automatically (sticky server +
+  multi-relay join scan), and reconnects return to the room's own relay — if
+  the lobby shows "Reconnecting…", stay on the screen or tap RETRY.
 - Public relays are best-effort (no SLA) and obscurity-private: room traffic is
   unlisted but guessable from the code, so don't share personal info in names/chat.
 - If the host's app dies mid-match, the lowest-joined connected player takes

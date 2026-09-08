@@ -57,6 +57,7 @@ import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.multiplayer.OnlineRoomClient
+import com.neoludo.game.multiplayer.model.ConnectionState
 import com.neoludo.game.multiplayer.model.PlayerPresence
 import com.neoludo.game.multiplayer.model.RoomStatus
 import kotlinx.coroutines.launch
@@ -75,6 +76,7 @@ fun LobbyWaitingRoomScreen(
     val scope = rememberCoroutineScope()
 
     val roomState by client.roomState.collectAsState()
+    val connectionState by client.connectionState.collectAsState()
     val presences = roomState?.players ?: emptyList()
     val meta = roomState?.meta
     val maxPlayers = meta?.maxPlayers ?: 4
@@ -86,6 +88,7 @@ fun LobbyWaitingRoomScreen(
     var isStarting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var copiedCodeToast by remember { mutableStateOf(false) }
+    var isRetrying by remember { mutableStateOf(false) }
 
     // Auto-navigate to game when match starts on ANY connected device
     LaunchedEffect(roomState?.meta?.status, roomState?.gameState) {
@@ -145,6 +148,58 @@ fun LobbyWaitingRoomScreen(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // Relay connection banner: backgrounding the app (e.g. to share
+            // the code) can drop the socket; auto-retry runs, this explains
+            // the state and offers a manual retry.
+            if (connectionState == ConnectionState.RECONNECTING ||
+                connectionState == ConnectionState.DISCONNECTED ||
+                connectionState == ConnectionState.CONNECTING
+            ) {
+                val isDown = connectionState == ConnectionState.DISCONNECTED
+                NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isRetrying || !isDown) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = NeoLudoColors.AmberYellow
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = if (isDown) "Disconnected from relay." else "Reconnecting to room relay…",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isDown && !isRetrying) {
+                            Text(
+                                text = "RETRY",
+                                color = NeoLudoColors.AmberYellow,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.clickable {
+                                    isRetrying = true
+                                    scope.launch {
+                                        val res = client.refreshConnection()
+                                        isRetrying = false
+                                        if (res.isFailure) {
+                                            errorMessage = res.exceptionOrNull()?.message
+                                                ?: "Still unreachable. Try again."
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Room Code Card
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {

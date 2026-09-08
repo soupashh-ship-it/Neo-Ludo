@@ -29,6 +29,8 @@ interface OnlineRoomClient : MultiplayerClient {
 
     suspend fun joinRoom(roomId: String): Result<Unit>
     suspend fun setFillBots(fillBots: Boolean): Result<Unit>
+    /** Manual reconnect (lobby retry button). Best-effort per transport. */
+    suspend fun refreshConnection(): Result<Unit>
 }
 
 object OnlineClientFactory {

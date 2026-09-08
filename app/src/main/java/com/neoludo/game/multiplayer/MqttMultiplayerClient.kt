@@ -110,6 +110,11 @@ class MqttMultiplayerClient(
     private var heartbeatJob: Job? = null
     private var retryJob: Job? = null
     private var joinedCode: String? = null
+    /**
+     * Broker network this room lives on. Reconnects always return here —
+     * hopping to another network mid-room would split-brain the peers.
+     */
+    private var roomServer: String? = null
 
     init {
         relay.onConnectionLost = {
@@ -179,12 +184,18 @@ class MqttMultiplayerClient(
             joinedAt = now,
             lastSeen = now
         )
-        relay.publish(MqttRelay.metaTopic(code), relay.json.encodeToString(meta), retained = true)
-        relay.publish(
+        val metaPub = relay.publish(MqttRelay.metaTopic(code), relay.json.encodeToString(meta), retained = true)
+        val presencePub = relay.publish(
             MqttRelay.presenceTopic(code, currentUid),
             relay.json.encodeToString(hostPresence),
             retained = true
         )
+        if (metaPub.isFailure || presencePub.isFailure) {
+            return@withContext Result.failure(
+                RoomError.NetworkFailure("Could not reach the relay. Check your connection and try again.")
+            )
+        }
+        roomServer = relay.connectedServer()
         attachListeners(code)
         synchronized(snapshotLock) {
             latestMeta = meta
@@ -202,8 +213,12 @@ class MqttMultiplayerClient(
         if (conn.isFailure) return@withContext Result.failure(conn.exceptionOrNull()!!)
         _connectionState.value = ConnectionState.CONNECTED
 
-        val rawMeta = relay.awaitRetained(MqttRelay.metaTopic(code), 6000L)
+        // The room may live on a different broker network than our default —
+        // scan all of them (the hit pins that server for the rest of the room).
+        val rawMeta = relay.fetchRetainedFromAny(MqttRelay.metaTopic(code))
             ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        // The probe pinned the room's server; all subsequent connects stay there.
+        roomServer = MqttRelay.pinnedServer
         val meta = runCatching { relay.json.decodeFromString<RoomMetadata>(rawMeta) }.getOrNull()
             ?: return@withContext Result.failure(RoomError.RoomNotFound)
         if (isReusableMeta(rawMeta)) {
@@ -251,11 +266,17 @@ class MqttMultiplayerClient(
         if (willConn.isFailure) return@withContext Result.failure(willConn.exceptionOrNull()!!)
         _connectionState.value = ConnectionState.CONNECTED
         attachListeners(code)
-        relay.publish(
+        val presencePub = relay.publish(
             MqttRelay.presenceTopic(code, currentUid),
             relay.json.encodeToString(assigned),
             retained = true
         )
+        if (presencePub.isFailure) {
+            return@withContext Result.failure(
+                RoomError.NetworkFailure("Joined but could not announce presence. Check your connection and retry.")
+            )
+        }
+        roomServer = relay.connectedServer()
         synchronized(snapshotLock) {
             latestMeta = meta
             latestPlayers.putAll(known)
@@ -392,6 +413,33 @@ class MqttMultiplayerClient(
         Result.success(Unit)
     }
 
+    /** Manual retry from the lobby's "Disconnected" banner. */
+    override suspend fun refreshConnection(): Result<Unit> = withContext(Dispatchers.IO) {
+        val code = joinedCode ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        retryJob?.cancel()
+        relay.disconnect()
+        val will = willFor(code)
+        val res = relay.connect(
+            MqttRelayDataSource.newClientId(currentUid.ifBlank { localPlayerId }),
+            will.first,
+            will.second,
+            preferServer = roomServer
+        )
+        if (res.isFailure) {
+            _connectionState.value = ConnectionState.RECONNECTING
+            startRetryLoop()
+            return@withContext Result.failure(
+                res.exceptionOrNull() ?: RoomError.NetworkFailure("Relay unreachable")
+            )
+        }
+        roomServer = relay.connectedServer()
+        republishSelf(code)
+        _connectionState.value = ConnectionState.CONNECTED
+        reconnectManager.onConnected()
+        maybeTriggerHost()
+        Result.success(Unit)
+    }
+
     override fun release() {
         botTurnJob?.cancel()
         timeoutJob?.cancel()
@@ -400,6 +448,7 @@ class MqttMultiplayerClient(
         listenerJobs.forEach { it.cancel() }
         listenerJobs = emptyList()
         joinedCode = null
+        roomServer = null
         scope.launch { relay.disconnect() }
         scope.cancel()
     }
@@ -411,10 +460,13 @@ class MqttMultiplayerClient(
         return state.activePlayer.id == currentUid || isHost
     }
 
-    private suspend fun ensureConnected(will: Pair<String, String>?): Result<Unit> {
+    private suspend fun ensureConnected(
+        will: Pair<String, String>?,
+        preferServer: String? = roomServer
+    ): Result<Unit> {
         if (relay.isConnected()) return Result.success(Unit)
         val id = MqttRelayDataSource.newClientId(currentUid.ifBlank { localPlayerId })
-        return relay.connect(id, will?.first, will?.second)
+        return relay.connect(id, will?.first, will?.second, preferServer = preferServer)
     }
 
     /**
@@ -422,11 +474,16 @@ class MqttMultiplayerClient(
      * only known after the existence checks — so reconnect once with the will
      * bound to this room. Cheap (pre-join, no subscriptions live yet).
      */
-    private suspend fun ensureConnectedWithWill(code: String): Result<Unit> {
+    private suspend fun ensureConnectedWithWill(
+        code: String,
+        preferServer: String? = roomServer
+    ): Result<Unit> {
         relay.disconnect()
         val id = MqttRelayDataSource.newClientId(currentUid.ifBlank { localPlayerId })
         val will = willFor(code)
-        return relay.connect(id, will.first, will.second)
+        val res = relay.connect(id, will.first, will.second, preferServer = preferServer)
+        if (res.isSuccess) roomServer = relay.connectedServer()
+        return res
     }
 
     private fun willFor(code: String): Pair<String, String> {
@@ -607,6 +664,30 @@ class MqttMultiplayerClient(
         }
     }
 
+    /**
+     * Immediately re-announce ourselves after a reconnect: our Last-Will may
+     * have stamped us offline on the broker while we were gone, and peers
+     * (including our own lobby card) would otherwise show "Disconnected"
+     * until the next 15s heartbeat. Hosts also refresh the room meta.
+     */
+    private suspend fun republishSelf(code: String) {
+        val now = System.currentTimeMillis()
+        val self = synchronized(snapshotLock) { latestPlayers[currentUid] } ?: return
+        relay.publish(
+            MqttRelay.presenceTopic(code, currentUid),
+            relay.json.encodeToString(self.copy(isConnected = true, lastSeen = now)),
+            retained = true
+        )
+        val meta = synchronized(snapshotLock) { latestMeta }
+        if (meta != null && meta.hostId == currentUid) {
+            relay.publish(
+                MqttRelay.metaTopic(code),
+                relay.json.encodeToString(meta.copy(updatedAt = now)),
+                retained = true
+            )
+        }
+    }
+
     private fun startRetryLoop() {
         if (retryJob?.isActive == true) return
         retryJob = scope.launch {
@@ -614,8 +695,17 @@ class MqttMultiplayerClient(
                 delay(3000L)
                 val code = joinedCode ?: break
                 val will = willFor(code)
-                val res = relay.connect(MqttRelayDataSource.newClientId(currentUid), will.first, will.second)
+                // Return to the ROOM's server — racing the list again could
+                // land on a broker network where this room doesn't exist.
+                val res = relay.connect(
+                    MqttRelayDataSource.newClientId(currentUid),
+                    will.first,
+                    will.second,
+                    preferServer = roomServer
+                )
                 if (res.isSuccess) {
+                    roomServer = relay.connectedServer()
+                    republishSelf(code)
                     _connectionState.value = ConnectionState.CONNECTED
                     reconnectManager.onConnected()
                     // Retained meta/state/presence re-arrive via resubscribe → snapshot catches up.

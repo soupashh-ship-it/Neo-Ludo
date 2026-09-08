@@ -4,8 +4,11 @@ import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -16,6 +19,9 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Zero-config online transport over free public MQTT brokers.
@@ -47,6 +53,31 @@ object MqttRelay {
         "ssl://broker.emqx.io:8883",
         "tcp://broker.emqx.io:1883"
     )
+
+    /**
+     * Process-wide sticky server. HiveMQ and EMQX are separate broker
+     * networks — a room published on one is invisible on the other — so every
+     * peer in a room MUST use the same server. The first successful connect
+     * (or probe hit) pins it; [orderedServers] then tries it first.
+     */
+    @Volatile
+    var pinnedServer: String? = null
+        private set
+
+    fun pinServer(uri: String) {
+        if (SERVERS.contains(uri)) pinnedServer = uri
+    }
+
+    fun clearPin() {
+        pinnedServer = null
+    }
+
+    /** Last-known-good (or explicitly preferred) server first, rest in order. */
+    fun orderedServers(prefer: String? = null): List<String> {
+        val first = prefer?.takeIf { SERVERS.contains(it) } ?: pinnedServer
+        return if (first != null) listOf(first) + SERVERS.filter { it != first }
+        else SERVERS
+    }
 
     const val CONNECT_TIMEOUT_SEC = 10
     const val KEEP_ALIVE_SEC = 30
@@ -112,18 +143,21 @@ class MqttRelayDataSource {
     fun connectedServer(): String? = connectedServer
 
     /**
-     * Connects, trying each public broker in order. [willTopic]/[willPayload]
-     * are published by the broker itself if we disconnect uncleanly
-     * (retained offline-presence marker).
+     * Connects, trying each public broker in order (pinned/last-known-good
+     * first). [willTopic]/[willPayload] are published by the broker itself
+     * if we disconnect uncleanly (retained offline-presence marker).
+     * The winning server is pinned process-wide so every peer in a room
+     * converges on the same broker network.
      */
     suspend fun connect(
         clientId: String,
         willTopic: String? = null,
-        willPayload: String? = null
+        willPayload: String? = null,
+        preferServer: String? = null
     ): Result<Unit> = withContext(Dispatchers.IO) {
         if (isConnected()) return@withContext Result.success(Unit)
         var lastError: Throwable? = null
-        for (uri in MqttRelay.SERVERS) {
+        for (uri in MqttRelay.orderedServers(preferServer)) {
             try {
                 val c = MqttClient(uri, clientId, MemoryPersistence())
                 c.setCallback(relayCallback)
@@ -139,6 +173,7 @@ class MqttRelayDataSource {
                 c.connect(opts)
                 client = c
                 connectedServer = uri
+                MqttRelay.pinServer(uri)
                 resubscribeAll()
                 return@withContext Result.success(Unit)
             } catch (e: Throwable) {
@@ -241,6 +276,89 @@ class MqttRelayDataSource {
                     client?.takeIf { it.isConnected }?.unsubscribe("$prefix+")
                 } catch (_: Throwable) {
                 }
+            }
+        }
+    }
+
+    /**
+     * Reads a retained message from EVERY broker network in parallel and
+     * returns the first hit. Rooms live on exactly one network (whichever the
+     * host happened to reach first), so a single-server lookup can falsely
+     * report "room does not exist" when the guest's default server differs
+     * from the host's. The winning server is pinned for subsequent connects.
+     *
+     * Fast path first: when already connected, one cheap lookup on the live
+     * link (~1.2s) before fanning out to short-lived probe connections.
+     */
+    suspend fun fetchRetainedFromAny(topic: String, timeoutMs: Long = 9000L): String? {
+        awaitRetained(topic, 1200L)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val winner = CompletableDeferred<Pair<String, String>?>(parent = null)
+            coroutineScope {
+                val perProbeMs = (timeoutMs - 1000L).coerceAtLeast(2500L)
+                val jobs = MqttRelay.SERVERS.map { uri ->
+                    launch {
+                        val payload = probeRetained(uri, topic, perProbeMs)
+                        if (payload != null) winner.complete(uri to payload)
+                    }
+                }
+                launch {
+                    jobs.joinAll()
+                    if (!winner.isCompleted) winner.complete(null)
+                }
+                try {
+                    val hit = withTimeoutOrNull(timeoutMs + 2000L) { winner.await() }
+                    if (hit != null) {
+                        MqttRelay.pinServer(hit.first)
+                        Log.d(tag, "Room topic found on ${hit.first}")
+                    }
+                    hit?.second
+                } finally {
+                    jobs.forEach { it.cancel() }
+                }
+            }
+        }
+    }
+
+    /**
+     * One-shot blocking probe: connects a throwaway client, waits briefly
+     * for the retained message, then disconnects. Never touches the live
+     * connection or its subscriptions.
+     */
+    private fun probeRetained(uri: String, topic: String, timeoutMs: Long): String? {
+        var probe: MqttClient? = null
+        return try {
+            probe = MqttClient(uri, "neoludo-probe-" + UUID.randomUUID().toString().take(8), MemoryPersistence())
+            probe.connect(
+                MqttConnectOptions().apply {
+                    isCleanSession = true
+                    connectionTimeout = 6
+                    keepAliveInterval = 15
+                    isAutomaticReconnect = false
+                }
+            )
+            val latch = CountDownLatch(1)
+            val hit = AtomicReference<String?>(null)
+            probe.subscribe(topic, 1) { _, message ->
+                val payload = message.toString()
+                if (payload.isNotBlank()) {
+                    hit.set(payload)
+                    latch.countDown()
+                }
+            }
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            hit.get()
+        } catch (e: Throwable) {
+            Log.d(tag, "Probe $uri: ${e.message}")
+            null
+        } finally {
+            try {
+                probe?.disconnect()
+            } catch (_: Throwable) {
+            }
+            try {
+                probe?.close()
+            } catch (_: Throwable) {
             }
         }
     }
