@@ -1080,25 +1080,49 @@ private fun findTouchedPiece(
     if (selectablePieceIds.isEmpty()) return null
 
     val activePlayer = gameState.activePlayer
+    val allPieces = gameState.players.flatMap { player ->
+        player.pieces.map { piece ->
+            val key = "${player.color}_${piece.id}"
+            val visualPos = visualPositions[key] ?: piece.position
+            val coord = BoardCoordinates.getGridCoordForPosition(player.color, visualPos)
+            Triple(player, piece, coord)
+        }
+    }
+    val groupedByCoord = allPieces.groupBy { it.third }
+
     var closestPiece: Piece? = null
     var minDistance = Float.MAX_VALUE
     val maxTouchRadius = cellSize * 0.95f
 
-    for (piece in activePlayer.pieces) {
-        if (piece.id !in selectablePieceIds) continue
-        val key = "${activePlayer.color}_${piece.id}"
-        val currentVisualPos = visualPositions[key] ?: piece.position
-        val (row, col) = BoardCoordinates.getGridCoordForPosition(activePlayer.color, currentVisualPos)
-        val pieceCenterX = col * cellSize + cellSize / 2f
-        val pieceCenterY = row * cellSize + cellSize / 2f
+    groupedByCoord.forEach { (_, piecesAtCell) ->
+        val count = piecesAtCell.size
+        piecesAtCell.forEachIndexed { index, (player, piece, coord) ->
+            if (player.color == activePlayer.color && piece.id in selectablePieceIds) {
+                val baseCenter = Offset(
+                    coord.second * cellSize + cellSize / 2f,
+                    coord.first * cellSize + cellSize / 2f
+                )
 
-        val dx = touchX - pieceCenterX
-        val dy = touchY - pieceCenterY
-        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                val pieceCenter = if (count > 1) {
+                    val clusterRadius = cellSize * 0.22f
+                    val angle = (index.toDouble() / count.toDouble()) * (Math.PI * 2.0)
+                    Offset(
+                        (baseCenter.x + clusterRadius * kotlin.math.cos(angle)).toFloat(),
+                        (baseCenter.y + clusterRadius * kotlin.math.sin(angle)).toFloat()
+                    )
+                } else {
+                    baseCenter
+                }
 
-        if (dist <= maxTouchRadius && dist < minDistance) {
-            minDistance = dist
-            closestPiece = piece
+                val dx = touchX - pieceCenter.x
+                val dy = touchY - pieceCenter.y
+                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                if (dist <= maxTouchRadius && dist < minDistance) {
+                    minDistance = dist
+                    closestPiece = piece
+                }
+            }
         }
     }
 

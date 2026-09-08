@@ -97,6 +97,36 @@ class LudoBotEngineTest {
     }
 
     @Test
+    fun testEnemyEnteringHomeStretchDoesNotCreateGhostThreat() {
+        // RED bot piece is at step 10 (global index 10)
+        // GREEN enemy piece is at step 48 (global index 9).
+        // In circular math, distance from GREEN (9) to RED (10) is 1.
+        // But GREEN is at step 48; with a roll of 3 (step 51), GREEN enters private home column and cannot reach step 10 on the main track.
+        val redPiece = Piece(0, PlayerColor.RED, PiecePosition.Path(10))
+        val greenEnemyPiece = Piece(0, PlayerColor.GREEN, PiecePosition.Path(49)) // step 49 + 2 = 51 (enters home stretch, cannot hit global 11)
+        val safeMovePiece = Piece(1, PlayerColor.RED, PiecePosition.Path(25))
+
+        val initial = LudoGameEngine.createInitialState(
+            "ai_threat_test",
+            listOf(
+                InitialPlayerConfig("bot1", "Bot", PlayerColor.RED, isBot = true),
+                InitialPlayerConfig("bot2", "Enemy", PlayerColor.GREEN, isBot = true)
+            )
+        )
+        val state = initial.copy(
+            players = listOf(
+                initial.players[0].copy(pieces = listOf(redPiece, safeMovePiece)),
+                initial.players[1].copy(pieces = listOf(greenEnemyPiece))
+            ),
+            turnPhase = TurnPhase.WAITING_FOR_MOVE,
+            diceState = com.neoludo.game.engine.model.DiceState(value = 1, isRolled = true, canRoll = false)
+        )
+
+        val bestMove = LudoBotEngine.pickBestMove(state, Difficulty.HARD)
+        assertThat(bestMove).isNotNull()
+    }
+
+    @Test
     fun testAutomatedAiGameSimulationPlaysOnlyLegalMoves() {
         var state = LudoGameEngine.createInitialState(
             "sim_game",

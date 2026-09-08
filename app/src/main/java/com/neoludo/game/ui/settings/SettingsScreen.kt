@@ -367,10 +367,8 @@ fun SettingsScreen(
                         }
                         Slider(
                             value = soundVolume,
-                            onValueChange = {
-                                soundVolume = it
-                                syncSettings()
-                            },
+                            onValueChange = { soundVolume = it },
+                            onValueChangeFinished = { syncSettings() },
                             colors = SliderDefaults.colors(
                                 thumbColor = NeoLudoColors.EmeraldGreen,
                                 activeTrackColor = NeoLudoColors.EmeraldGreen
@@ -388,10 +386,8 @@ fun SettingsScreen(
                         }
                         Slider(
                             value = musicVolume,
-                            onValueChange = {
-                                musicVolume = it
-                                syncSettings()
-                            },
+                            onValueChange = { musicVolume = it },
+                            onValueChangeFinished = { syncSettings() },
                             colors = SliderDefaults.colors(
                                 thumbColor = NeoLudoColors.CobaltBlue,
                                 activeTrackColor = NeoLudoColors.CobaltBlue

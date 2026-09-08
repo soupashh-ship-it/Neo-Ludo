@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,8 +34,8 @@ import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -45,9 +47,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -61,6 +65,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,6 +85,11 @@ import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.TurnPhase
 import com.neoludo.game.multiplayer.MultiplayerClient
 import com.neoludo.game.multiplayer.model.ChatEvent
+import com.neoludo.game.engine.rules.MoveValidator
+import com.neoludo.game.engine.coordinate.BoardCoordinates
+import com.neoludo.game.engine.model.PiecePosition
+import com.neoludo.game.engine.ai.Difficulty
+import com.neoludo.game.engine.ai.LudoBotEngine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 @Composable
@@ -91,12 +102,20 @@ fun GameScreen(
     boardTheme: BoardTheme = BoardTheme.CYBER_OBSIDIAN,
     diceSkin: DiceSkin = DiceSkin.PRISM_CRYSTAL,
     pawnSkin: PawnSkin = PawnSkin.CYBER_PIPS,
+    reducedMotion: Boolean = false,
     onUpdateTheme: (BoardTheme) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val gameState by client.gameState.collectAsState()
     val chatEvents by client.chatEvents.collectAsState(initial = null)
+    val connectionState by client.connectionState.collectAsState()
     val scope = rememberCoroutineScope()
+    // Clean up MultiplayerClient when GameScreen is disposed (navigated away)
+    DisposableEffect(client) {
+        onDispose {
+            client.release()
+        }
+    }
 
     var showSurrenderDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -107,16 +126,74 @@ fun GameScreen(
     var totalCaptures by remember { mutableIntStateOf(0) }
     var totalSixes by remember { mutableIntStateOf(0) }
 
+    // System back during a live match asks to surrender first — no silent abandon.
+    BackHandler(enabled = gameState?.isGameOver == false) {
+        showSurrenderDialog = true
+    }
+
     // Turn timer progress
     val timerProgress = remember { Animatable(1f) }
+    var autoActedNotice by remember { mutableStateOf(false) }
 
-    // Listen to active turn changes to reset timer animation
-    LaunchedEffect(gameState?.activePlayerIndex, gameState?.diceState?.value) {
+    // Listen to active turn changes to reset timer animation and handle AFK timeout
+    LaunchedEffect(gameState?.activePlayerIndex, gameState?.diceState?.value, gameState?.turnPhase) {
+        val currentTimer = gameState?.ruleSet?.turnTimerSeconds ?: 30
+        autoActedNotice = false
         timerProgress.snapTo(1f)
-        timerProgress.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(durationMillis = 30000, easing = LinearEasing)
-        )
+        // Run the countdown animation concurrently with the AFK wait below.
+        launch {
+            timerProgress.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = currentTimer * 1000, easing = LinearEasing)
+            )
+        }
+        // Auto-action only AFTER the full turn timeout (AFK), not instantly —
+        // previous code auto-rolled/moved immediately, robbing the human turn.
+        val current = gameState ?: return@LaunchedEffect
+        val isLocalActive = when (client) {
+            is com.neoludo.game.multiplayer.FirebaseMultiplayerClient -> client.currentUid == current.activePlayer.id
+            else -> !current.activePlayer.isBot
+        }
+        if (!current.isGameOver && isLocalActive) {
+            delay(currentTimer * 1000L)
+            // Re-read: turn may have advanced while waiting.
+            val latest = gameState
+            if (latest == null || latest.isGameOver || latest.version != current.version) return@LaunchedEffect
+            when (latest.turnPhase) {
+                TurnPhase.WAITING_FOR_ROLL -> {
+                    if (latest.diceState.canRoll && !isRollingAnimation) {
+                        isRollingAnimation = true
+                        autoActedNotice = true
+                        client.rollDice()
+                        delay(300)
+                        isRollingAnimation = false
+                    }
+                }
+                TurnPhase.WAITING_FOR_MOVE -> {
+                    if (!isExecutingMove) {
+                        val legalMoves = MoveValidator.getLegalMoves(latest.activePlayer, latest.diceState.value, latest.players)
+                        if (legalMoves.isNotEmpty()) {
+                            val bestMove = LudoBotEngine.pickBestMove(latest, Difficulty.EASY) ?: legalMoves.first().piece
+                            isExecutingMove = true
+                            autoActedNotice = true
+                            client.movePiece(bestMove.id)
+                            delay(300)
+                            isExecutingMove = false
+                        }
+                    }
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    // Turn notification sound when turn shifts to a human player
+    LaunchedEffect(gameState?.activePlayerIndex) {
+        val current = gameState ?: return@LaunchedEffect
+        if (!current.isGameOver && !current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+            soundController.play(SoundEffect.TURN_NOTIFY)
+            hapticController.perform(HapticType.LIGHT_TICK)
+        }
     }
 
     // Listen to Engine Events for audio and haptics
@@ -129,7 +206,10 @@ fun GameScreen(
                 if (event.value == 6) totalSixes++
             }
             is GameEngineEvent.PieceMoved -> {
-                // Handled smoothly by CanvasLudoBoard onStepHop
+                if (event.to is PiecePosition.Path && BoardCoordinates.isSafeCell(event.player, event.to.step)) {
+                    soundController.play(SoundEffect.SAFE_ZONE)
+                    hapticController.perform(HapticType.SUCCESS_DOUBLE)
+                }
             }
             is GameEngineEvent.PieceCaptured -> {
                 soundController.play(SoundEffect.PIECE_CAPTURE)
@@ -147,6 +227,21 @@ fun GameScreen(
                 onGameFinished(event.winner, totalCaptures, totalSixes)
             }
             else -> Unit
+        }
+    }
+
+    // Auto-move single piece when ruleSet.autoMoveSinglePiece is enabled
+    LaunchedEffect(gameState?.turnPhase, gameState?.activePlayerIndex, gameState?.diceState?.value, gameState?.diceState?.isRolled) {
+        val current = gameState ?: return@LaunchedEffect
+        if (!current.isGameOver && !current.activePlayer.isBot && current.turnPhase == TurnPhase.WAITING_FOR_MOVE && current.ruleSet.autoMoveSinglePiece) {
+            val legalMoves = MoveValidator.getLegalMoves(current.activePlayer, current.diceState.value, current.players)
+            if (legalMoves.size == 1 && !isExecutingMove) {
+                delay(350)
+                isExecutingMove = true
+                client.movePiece(legalMoves.first().piece.id)
+                delay(300)
+                isExecutingMove = false
+            }
         }
     }
 
@@ -204,19 +299,21 @@ fun GameScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(horizontal = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 1. Top HUD
             GameTopHud(
+                connectionState = connectionState,
                 onSurrenderClick = { showSurrenderDialog = true },
                 onEmoteClick = { showEmotePicker = !showEmotePicker },
                 onSettingsClick = { showSettingsDialog = true },
                 soundController = soundController
             )
-
             Spacer(modifier = Modifier.height(10.dp))
 
             // 2. Top Player Plates (Only for 3-4 Player Games)
@@ -248,7 +345,13 @@ fun GameScreen(
 
             // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics & Custom Skins
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = "Ludo board. ${state.activePlayer.name}'s turn. " +
+                            "Dice showing ${state.diceState.value}. " +
+                            "Phase: ${state.turnPhase}. Tap a glowing piece to move."
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 CanvasLudoBoard(
@@ -293,10 +396,13 @@ fun GameScreen(
                     state = state,
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
+                    motionEnabled = !reducedMotion,
                     onRollDice = {
                         if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
                                 isRollingAnimation = true
+                                soundController.play(SoundEffect.BUTTON_CLICK)
+                                hapticController.perform(HapticType.MEDIUM_CLICK)
                                 client.rollDice()
                                 delay(300)
                                 isRollingAnimation = false
@@ -336,10 +442,15 @@ fun GameScreen(
                     state = state,
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
+                    secondsLeft = ((state.ruleSet.turnTimerSeconds * timerProgress.value).toInt().coerceIn(0, state.ruleSet.turnTimerSeconds)),
+                    autoActed = autoActedNotice,
+                    motionEnabled = !reducedMotion,
                     onRollDice = {
                         if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
                                 isRollingAnimation = true
+                                soundController.play(SoundEffect.BUTTON_CLICK)
+                                hapticController.perform(HapticType.MEDIUM_CLICK)
                                 client.rollDice()
                                 delay(300)
                                 isRollingAnimation = false
@@ -420,6 +531,7 @@ fun GameScreen(
 
 @Composable
 private fun GameTopHud(
+    connectionState: com.neoludo.game.multiplayer.model.ConnectionState,
     onSurrenderClick: () -> Unit,
     onEmoteClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -433,32 +545,57 @@ private fun GameTopHud(
         IconButton(
             onClick = onSurrenderClick,
             modifier = Modifier
-                .size(42.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(NeoLudoColors.ObsidianSurfaceCard)
-                .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+                .background(NeoLudoColors.BrutalistInkSoft)
+                .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
         ) {
             Icon(
                 imageVector = Icons.Default.Flag,
                 contentDescription = "Surrender",
-                tint = NeoLudoColors.RubyRed,
+                tint = NeoLudoColors.BrutalistRed,
                 modifier = Modifier.size(20.dp)
             )
+        }
+        if (connectionState == com.neoludo.game.multiplayer.model.ConnectionState.RECONNECTING) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = NeoLudoColors.AmberYellow.copy(alpha = 0.2f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, NeoLudoColors.AmberYellow)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = NeoLudoColors.AmberYellow,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Reconnecting...",
+                        color = NeoLudoColors.AmberYellow,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(
                 onClick = onEmoteClick,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.ObsidianSurfaceCard)
-                    .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+                    .background(NeoLudoColors.BrutalistInkSoft)
+                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.AddReaction,
                     contentDescription = "Emotes",
-                    tint = NeoLudoColors.AmberYellow,
+                    tint = NeoLudoColors.BrutalistAmber,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -466,15 +603,15 @@ private fun GameTopHud(
             IconButton(
                 onClick = onSettingsClick,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.ObsidianSurfaceCard)
-                    .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+                    .background(NeoLudoColors.BrutalistInkSoft)
+                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
-                    tint = NeoLudoColors.CobaltBlue,
+                    tint = NeoLudoColors.BrutalistBlue,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -482,13 +619,13 @@ private fun GameTopHud(
             IconButton(
                 onClick = { soundController.toggleSound() },
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.ObsidianSurfaceCard)
-                    .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+                    .background(NeoLudoColors.BrutalistInkSoft)
+                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
             ) {
                 Icon(
-                    imageVector = if (soundController.isSoundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                    imageVector = if (soundController.isSoundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute,
                     contentDescription = "Mute",
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
@@ -503,10 +640,13 @@ private fun TurnActionTray(
     state: com.neoludo.game.engine.model.GameState,
     isRolling: Boolean,
     diceSkin: DiceSkin,
-    onRollDice: () -> Unit
+    onRollDice: () -> Unit,
+    secondsLeft: Int = -1,
+    autoActed: Boolean = false,
+    motionEnabled: Boolean = true
 ) {
     val active = state.activePlayer
-    val playerColor = NeoLudoColors.getPlayerColor(active.color)
+    val playerColor = NeoLudoColors.getBrutalistPlayerColor(active.color)
 
     val promptTitle = when {
         active.isBot -> "${active.name}'s Turn"
@@ -526,15 +666,22 @@ private fun TurnActionTray(
         TurnPhase.GAME_OVER -> "Game Over!"
     }
 
+    // Urgency color for the countdown: paper → amber (<10s) → red (<5s).
+    val timerColor = when {
+        secondsLeft in 0..5 -> NeoLudoColors.BrutalistRed
+        secondsLeft in 6..10 -> NeoLudoColors.BrutalistAmber
+        else -> NeoLudoColors.BrutalistTextMutedOnInk
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         // Player Turn Badge Capsule with Consecutive Sixes warning & Bonus indicators
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = NeoLudoColors.ObsidianSurfaceCard,
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, playerColor.copy(alpha = 0.7f))
+            shape = RoundedCornerShape(14.dp),
+            color = NeoLudoColors.BrutalistInkSoft,
+            border = androidx.compose.foundation.BorderStroke(2.dp, NeoLudoColors.BrutalistLine)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -554,6 +701,18 @@ private fun TurnActionTray(
                     fontSize = 13.sp
                 )
 
+                // Countdown seconds with urgency color + screen-reader description.
+                if (secondsLeft >= 0 && !state.isGameOver) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "00:${secondsLeft.toString().padStart(2, '0')}",
+                        color = timerColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+
                 // Consecutive Sixes indicator dots
                 if (state.diceState.consecutiveSixes > 0) {
                     Spacer(modifier = Modifier.width(8.dp))
@@ -564,7 +723,7 @@ private fun TurnActionTray(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (isFilled) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianBorder)
+                                    .background(if (isFilled) NeoLudoColors.BrutalistAmber else NeoLudoColors.BrutalistLine)
                             )
                         }
                     }
@@ -577,10 +736,18 @@ private fun TurnActionTray(
         // Action Guidance Text
         Text(
             text = promptInstruction,
-            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianTextSecondary,
+            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) NeoLudoColors.BrutalistAmber else NeoLudoColors.BrutalistTextMutedOnInk,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp
         )
+        if (autoActed) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Auto-played — you ran out of time",
+                color = NeoLudoColors.BrutalistTextMutedOnInk,
+                fontSize = 11.sp
+            )
+        }
 
         // 3D Animated Dice with Selected Skin
         val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
@@ -589,6 +756,7 @@ private fun TurnActionTray(
             playerColor = active.color,
             isRolling = isRolling,
             skin = diceSkin,
+            motionEnabled = motionEnabled,
             onRollClick = { if (canInteract) onRollDice() },
             sizeDp = 78.dp
         )
@@ -600,7 +768,8 @@ private fun TwoPlayerArcadeBottomBar(
     state: com.neoludo.game.engine.model.GameState,
     isRolling: Boolean,
     diceSkin: DiceSkin,
-    onRollDice: () -> Unit
+    onRollDice: () -> Unit,
+    motionEnabled: Boolean = true
 ) {
     val p1 = state.players.getOrNull(0) ?: return
     val p2 = state.players.getOrNull(1) ?: return
@@ -610,10 +779,10 @@ private fun TwoPlayerArcadeBottomBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp)),
-        color = Color(0xFF003F8A),
-        border = androidx.compose.foundation.BorderStroke(2.5.dp, Color(0xFFFFD54F)),
-        shape = RoundedCornerShape(22.dp)
+            .clip(RoundedCornerShape(14.dp)),
+        color = NeoLudoColors.BrutalistInkSoft,
+        border = androidx.compose.foundation.BorderStroke(2.dp, NeoLudoColors.BrutalistLine),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Row(
             modifier = Modifier
@@ -681,6 +850,7 @@ private fun TwoPlayerArcadeBottomBar(
                         playerColor = state.activePlayer.color,
                         isRolling = isRolling,
                         skin = diceSkin,
+                        motionEnabled = motionEnabled,
                         onRollClick = { if (canInteract) onRollDice() },
                         sizeDp = 64.dp
                     )

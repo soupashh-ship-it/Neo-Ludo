@@ -7,39 +7,49 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class RoomStatus {
+    CREATING,
     LOBBY,
+    STARTING,
     IN_GAME,
+    PAUSED,
+    RECONNECTING,
     COMPLETED,
     ABANDONED
 }
 
 @Serializable
 data class RoomMetadata(
-    val roomId: String,
-    val hostId: String,
+    val roomId: String = "",
+    val hostId: String = "",
+    val hostEpoch: Long = 1L,
     val status: RoomStatus = RoomStatus.LOBBY,
     val maxPlayers: Int = 4,
+    val fillBots: Boolean = false,
     val ruleSet: LudoRuleSet = LudoRuleSet(),
     val createdAt: Long = 0L,
-    val lastHeartbeat: Long = 0L
+    val updatedAt: Long = 0L,
+    val turnStartedAt: Long = 0L,
+    val turnDeadline: Long = 0L
 )
 
 @Serializable
 data class PlayerPresence(
-    val id: String,
-    val name: String,
+    val id: String = "",
+    val name: String = "",
     val avatarId: Int = 1,
-    val color: PlayerColor,
+    val color: PlayerColor = PlayerColor.RED,
     val isHost: Boolean = false,
     val isReady: Boolean = false,
     val isConnected: Boolean = true,
-    val isAi: Boolean = false
+    val isAi: Boolean = false,
+    val joinedAt: Long = 0L,
+    val lastSeen: Long = 0L
 )
 
 @Serializable
 data class RoomSnapshot(
-    val meta: RoomMetadata,
-    val players: List<PlayerPresence>,
+    val meta: RoomMetadata = RoomMetadata(),
+    val players: List<PlayerPresence> = emptyList(),
     val gameState: GameState? = null
 )
 
@@ -53,10 +63,10 @@ enum class ConnectionState {
 
 @Serializable
 data class ChatEvent(
-    val id: String,
-    val senderId: String,
-    val senderName: String,
-    val senderColor: PlayerColor,
+    val id: String = "",
+    val senderId: String = "",
+    val senderName: String = "",
+    val senderColor: PlayerColor = PlayerColor.RED,
     val message: String? = null,
     val emoteId: String? = null,
     val timestamp: Long = 0L
@@ -69,15 +79,58 @@ enum class ActionType {
     PASS_TURN,
     SET_READY,
     START_GAME,
-    LEAVE_ROOM
+    LEAVE_ROOM,
+    TOGGLE_BOT_FILL,
+    REQUEST_RECONNECT
 }
 
 @Serializable
 data class NetworkAction(
-    val actionId: String,
-    val sequence: Long,
-    val type: ActionType,
-    val playerId: String,
+    val actionId: String = "",
+    val sequence: Long = 0L,
+    val type: ActionType = ActionType.ROLL_DICE,
+    val playerId: String = "",
     val payload: String = "",
     val timestamp: Long = 0L
 )
+
+@Serializable
+enum class NetworkEventType {
+    PLAYER_JOINED,
+    PLAYER_LEFT,
+    PLAYER_READY,
+    GAME_STARTED,
+    DICE_ROLLED,
+    PIECE_MOVED,
+    PIECE_CAPTURED,
+    BONUS_TURN,
+    TURN_FORFEITED,
+    PLAYER_DISCONNECTED,
+    PLAYER_RECONNECTED,
+    AI_TAKEOVER,
+    PLAYER_WON,
+    GAME_OVER
+}
+
+@Serializable
+data class NetworkEvent(
+    val eventId: String = "",
+    val type: NetworkEventType = NetworkEventType.GAME_STARTED,
+    val playerId: String = "",
+    val payload: String = "",
+    val version: Long = 0L,
+    val timestamp: Long = 0L
+)
+
+sealed class RoomError(val userMessage: String) : Exception(userMessage) {
+    data object RoomNotFound : RoomError("Room does not exist. Check the room code.")
+    data object RoomFull : RoomError("This room is already full.")
+    data object GameAlreadyStarted : RoomError("Game has already started in this room.")
+    data object RoomExpired : RoomError("This room has expired or been abandoned.")
+    data object AlreadyJoined : RoomError("You are already in this room.")
+    data object NotHost : RoomError("Only the room host can perform this action.")
+    data object NotYourTurn : RoomError("It is not your turn.")
+    data object IllegalMove : RoomError("Selected move is not valid.")
+    data object AuthenticationRequired : RoomError("Network connection / authentication required.")
+    data class NetworkFailure(val details: String) : RoomError("Network error: $details")
+}

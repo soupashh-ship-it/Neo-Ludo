@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Token
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -63,6 +64,7 @@ import com.neoludo.game.core.designsystem.NeoLudoColors
 import com.neoludo.game.core.model.BoardTheme
 import com.neoludo.game.core.model.DiceSkin
 import com.neoludo.game.core.model.PawnSkin
+import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.engine.model.DiceState
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.ui.game.Dice3DRenderer
@@ -77,20 +79,34 @@ enum class LockerTab(val title: String, val icon: ImageVector) {
     PAWNS("Pawn Tokens", Icons.Default.Token)
 }
 
+private data class PendingPurchase(
+    val title: String,
+    val coinCost: Int,
+    val gemCost: Int,
+    val canAfford: Boolean,
+    val onConfirm: () -> Unit
+)
+
 @Composable
 fun LockerScreen(
+    profile: UserProfile,
     currentBoardTheme: BoardTheme,
     currentDiceSkin: DiceSkin,
     currentPawnSkin: PawnSkin,
     onSelectBoardTheme: (BoardTheme) -> Unit,
     onSelectDiceSkin: (DiceSkin) -> Unit,
     onSelectPawnSkin: (PawnSkin) -> Unit,
+    onUnlockBoardTheme: (BoardTheme, costCoins: Int, costGems: Int) -> Unit,
+    onUnlockDiceSkin: (DiceSkin, costCoins: Int, costGems: Int) -> Unit,
+    onUnlockPawnSkin: (PawnSkin, costCoins: Int, costGems: Int) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(LockerTab.BOARDS) }
     var testDiceValue by remember { mutableIntStateOf(6) }
     var isTestRolling by remember { mutableStateOf(false) }
+    var pendingPurchase by remember { mutableStateOf<PendingPurchase?>(null) }
+    var purchaseError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Box(
@@ -113,10 +129,10 @@ fun LockerScreen(
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+                        .background(NeoLudoColors.BrutalistInkSoft)
+                        .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -128,7 +144,7 @@ fun LockerScreen(
 
                 Spacer(modifier = Modifier.width(14.dp))
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "COSMETICS LOCKER",
                         color = Color.White,
@@ -141,6 +157,49 @@ fun LockerScreen(
                         color = NeoLudoColors.ObsidianTextSecondary,
                         fontSize = 12.sp
                     )
+                }
+
+                // Currency Badges
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1B2338),
+                        border = BorderStroke(1.dp, Color(0xFF2B3A5A))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "🪙", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${profile.coins}",
+                                color = NeoLudoColors.AmberYellow,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1B2338),
+                        border = BorderStroke(1.dp, Color(0xFF2B3A5A))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "💎", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${profile.gems}",
+                                color = Color(0xFF00E5FF),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
             }
 
@@ -344,10 +403,11 @@ fun LockerScreen(
             AnimatedContent(
                 targetState = selectedTab,
                 transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-                label = "locker_content"
+                label = "locker_content",
+                modifier = Modifier.weight(1f, fill = true)
             ) { tab ->
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     when (tab) {
@@ -355,10 +415,21 @@ fun LockerScreen(
                             items(BoardTheme.values().size) { idx ->
                                 val theme = BoardTheme.values()[idx]
                                 val isEquipped = theme == currentBoardTheme
+                                val isUnlocked = theme in profile.unlockedThemes
+                                val (coinCost, gemCost) = when (theme) {
+                                    BoardTheme.CLASSIC_ARCADE, BoardTheme.CYBER_OBSIDIAN -> 0 to 0
+                                    BoardTheme.ROYAL_PARCHMENT -> 5000 to 0
+                                    BoardTheme.SYNTHWAVE_NEON -> 8000 to 20
+                                    BoardTheme.FROST_TITANIUM -> 10000 to 30
+                                }
                                 CosmeticCard(
                                     title = theme.displayName,
                                     description = theme.description,
                                     isEquipped = isEquipped,
+                                    isUnlocked = isUnlocked,
+                                    costCoins = coinCost,
+                                    costGems = gemCost,
+                                    canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
                                     accentColor = when (theme) {
                                         BoardTheme.CLASSIC_ARCADE -> NeoLudoColors.EmeraldGreen
                                         BoardTheme.CYBER_OBSIDIAN -> NeoLudoColors.CobaltBlue
@@ -366,7 +437,21 @@ fun LockerScreen(
                                         BoardTheme.SYNTHWAVE_NEON -> Color(0xFFFF007F)
                                         BoardTheme.FROST_TITANIUM -> Color(0xFF00E5FF)
                                     },
-                                    onEquip = { onSelectBoardTheme(theme) }
+                                    onEquip = {
+                                        if (isUnlocked) {
+                                            purchaseError = null
+                                            onSelectBoardTheme(theme)
+                                        } else {
+                                            purchaseError = null
+                                            pendingPurchase = PendingPurchase(
+                                                title = theme.displayName,
+                                                coinCost = coinCost,
+                                                gemCost = gemCost,
+                                                canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
+                                                onConfirm = { onUnlockBoardTheme(theme, coinCost, gemCost) }
+                                            )
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -375,10 +460,21 @@ fun LockerScreen(
                             items(DiceSkin.values().size) { idx ->
                                 val skin = DiceSkin.values()[idx]
                                 val isEquipped = skin == currentDiceSkin
+                                val isUnlocked = skin in profile.unlockedDice
+                                val (coinCost, gemCost) = when (skin) {
+                                    DiceSkin.CLASSIC_IVORY, DiceSkin.PRISM_CRYSTAL -> 0 to 0
+                                    DiceSkin.RUBY_ARCADE -> 3000 to 0
+                                    DiceSkin.CARBON_CYBER -> 6000 to 15
+                                    DiceSkin.ROYAL_GOLD -> 12000 to 50
+                                }
                                 CosmeticCard(
                                     title = skin.displayName,
                                     description = skin.description,
                                     isEquipped = isEquipped,
+                                    isUnlocked = isUnlocked,
+                                    costCoins = coinCost,
+                                    costGems = gemCost,
+                                    canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
                                     accentColor = when (skin) {
                                         DiceSkin.RUBY_ARCADE -> Color(0xFFE53935)
                                         DiceSkin.PRISM_CRYSTAL -> Color(0xFF00E5FF)
@@ -386,7 +482,21 @@ fun LockerScreen(
                                         DiceSkin.ROYAL_GOLD -> Color(0xFFFFD700)
                                         DiceSkin.CLASSIC_IVORY -> Color(0xFFD7CCC8)
                                     },
-                                    onEquip = { onSelectDiceSkin(skin) }
+                                    onEquip = {
+                                        if (isUnlocked) {
+                                            purchaseError = null
+                                            onSelectDiceSkin(skin)
+                                        } else {
+                                            purchaseError = null
+                                            pendingPurchase = PendingPurchase(
+                                                title = skin.displayName,
+                                                coinCost = coinCost,
+                                                gemCost = gemCost,
+                                                canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
+                                                onConfirm = { onUnlockDiceSkin(skin, coinCost, gemCost) }
+                                            )
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -395,17 +505,41 @@ fun LockerScreen(
                             items(PawnSkin.values().size) { idx ->
                                 val skin = PawnSkin.values()[idx]
                                 val isEquipped = skin == currentPawnSkin
+                                val isUnlocked = skin in profile.unlockedPawns
+                                val (coinCost, gemCost) = when (skin) {
+                                    PawnSkin.MAP_PINS, PawnSkin.CYBER_PIPS -> 0 to 0
+                                    PawnSkin.ROYAL_CROWNS -> 4000 to 10
+                                    PawnSkin.CRYSTAL_GEMS -> 7000 to 20
+                                }
                                 CosmeticCard(
                                     title = skin.displayName,
                                     description = skin.description,
                                     isEquipped = isEquipped,
+                                    isUnlocked = isUnlocked,
+                                    costCoins = coinCost,
+                                    costGems = gemCost,
+                                    canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
                                     accentColor = when (skin) {
                                         PawnSkin.MAP_PINS -> Color(0xFFE53935)
                                         PawnSkin.CYBER_PIPS -> NeoLudoColors.CobaltBlue
                                         PawnSkin.ROYAL_CROWNS -> Color(0xFFFFD700)
                                         PawnSkin.CRYSTAL_GEMS -> Color(0xFF00F0FF)
                                     },
-                                    onEquip = { onSelectPawnSkin(skin) }
+                                    onEquip = {
+                                        if (isUnlocked) {
+                                            purchaseError = null
+                                            onSelectPawnSkin(skin)
+                                        } else {
+                                            purchaseError = null
+                                            pendingPurchase = PendingPurchase(
+                                                title = skin.displayName,
+                                                coinCost = coinCost,
+                                                gemCost = gemCost,
+                                                canAfford = profile.coins >= coinCost && profile.gems >= gemCost,
+                                                onConfirm = { onUnlockPawnSkin(skin, coinCost, gemCost) }
+                                            )
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -416,6 +550,53 @@ fun LockerScreen(
                     }
                 }
             }
+            // Inline purchase error (e.g. insufficient funds confirmed in dialog).
+            if (purchaseError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = purchaseError ?: "",
+                    color = NeoLudoColors.BrutalistRed,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        // Confirm-before-buy dialog — single-tap purchases no longer fire silently.
+        val pending = pendingPurchase
+        if (pending != null) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { pendingPurchase = null },
+                title = { Text(text = "Unlock ${pending.title}?") },
+                text = {
+                    Text(
+                        text = if (pending.coinCost == 0 && pending.gemCost == 0) {
+                            "This item is free."
+                        } else {
+                            "Cost: ${pending.coinCost} coins" +
+                                (if (pending.gemCost > 0) " + ${pending.gemCost} gems" else "") +
+                                (if (!pending.canAfford) "\nNot enough currency." else "")
+                        }
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            if (pending.canAfford) {
+                                pendingPurchase = null
+                                purchaseError = null
+                                pending.onConfirm()
+                            } else {
+                                pendingPurchase = null
+                                purchaseError = "Not enough currency for ${pending.title}."
+                            }
+                        }
+                    ) { Text("Unlock") }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { pendingPurchase = null }) { Text("Cancel") }
+                }
+            )
         }
     }
 }
@@ -425,6 +606,10 @@ private fun CosmeticCard(
     title: String,
     description: String,
     isEquipped: Boolean,
+    isUnlocked: Boolean,
+    costCoins: Int,
+    costGems: Int,
+    canAfford: Boolean,
     accentColor: Color,
     onEquip: () -> Unit
 ) {
@@ -434,7 +619,7 @@ private fun CosmeticCard(
             .clip(RoundedCornerShape(18.dp))
             .border(
                 1.5.dp,
-                if (isEquipped) accentColor else NeoLudoColors.ObsidianBorder,
+                if (isEquipped) accentColor else if (!isUnlocked) NeoLudoColors.ObsidianBorder.copy(alpha = 0.6f) else NeoLudoColors.ObsidianBorder,
                 RoundedCornerShape(18.dp)
             )
             .clickable { onEquip() },
@@ -449,14 +634,18 @@ private fun CosmeticCard(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(accentColor.copy(alpha = 0.2f))
-                    .border(1.dp, accentColor, RoundedCornerShape(12.dp)),
+                    .background(if (isUnlocked) accentColor.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f))
+                    .border(1.dp, if (isUnlocked) accentColor else Color.Gray.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (isEquipped) Icons.Default.CheckCircle else Icons.Default.Token,
+                    imageVector = when {
+                        isEquipped -> Icons.Default.CheckCircle
+                        !isUnlocked -> Icons.Default.Lock
+                        else -> Icons.Default.Token
+                    },
                     contentDescription = null,
-                    tint = accentColor,
+                    tint = if (isUnlocked) accentColor else Color.LightGray,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -466,7 +655,7 @@ private fun CosmeticCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = if (isUnlocked) Color.White else Color.LightGray,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
@@ -481,33 +670,55 @@ private fun CosmeticCard(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            if (isEquipped) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = accentColor.copy(alpha = 0.25f),
-                    border = BorderStroke(1.dp, accentColor)
-                ) {
-                    Text(
-                        text = "EQUIPPED",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
+            when {
+                isEquipped -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = accentColor.copy(alpha = 0.25f),
+                        border = BorderStroke(1.dp, accentColor)
+                    ) {
+                        Text(
+                            text = "EQUIPPED",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
                 }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = NeoLudoColors.ObsidianSurface,
-                    border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
-                ) {
-                    Text(
-                        text = "EQUIP",
-                        color = NeoLudoColors.ObsidianTextSecondary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
+                isUnlocked -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = NeoLudoColors.ObsidianSurface,
+                        border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
+                    ) {
+                        Text(
+                            text = "EQUIP",
+                            color = NeoLudoColors.ObsidianTextSecondary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+                else -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (canAfford) NeoLudoColors.AmberYellow.copy(alpha = 0.2f) else Color.Red.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, if (canAfford) NeoLudoColors.AmberYellow else Color.Red.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (costCoins > 0) "🪙 $costCoins" else "💎 $costGems",
+                                color = if (canAfford) Color.White else Color.Red.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
             }
         }

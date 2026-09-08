@@ -44,7 +44,17 @@ class BotMultiplayerClient(
     private val mutex = Mutex()
     private var botExecutionJob: Job? = null
     private val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
-    private val orderedColors = listOf(humanColor) + allColors.filter { it != humanColor }.take(botCount)
+    private val orderedColors = if (botCount == 1) {
+        val oppositeColor = when (humanColor) {
+            PlayerColor.RED -> PlayerColor.YELLOW
+            PlayerColor.YELLOW -> PlayerColor.RED
+            PlayerColor.GREEN -> PlayerColor.BLUE
+            PlayerColor.BLUE -> PlayerColor.GREEN
+        }
+        listOf(humanColor, oppositeColor)
+    } else {
+        listOf(humanColor) + allColors.filter { it != humanColor }.take(botCount)
+    }
 
     private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()

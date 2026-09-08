@@ -1,6 +1,7 @@
 package com.neoludo.game.ui.navigation
 
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -8,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -21,8 +23,9 @@ import com.neoludo.game.engine.ai.Difficulty
 import com.neoludo.game.engine.model.LudoRuleSet
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.multiplayer.BotMultiplayerClient
-import com.neoludo.game.multiplayer.FirebaseMultiplayerClient
 import com.neoludo.game.multiplayer.LocalMultiplayerClient
+import com.neoludo.game.multiplayer.OnlineClientFactory
+import com.neoludo.game.multiplayer.OnlineRoomClient
 import com.neoludo.game.ui.friends.FriendsScreen
 import com.neoludo.game.ui.game.GameScreen
 import com.neoludo.game.ui.home.HomeScreen
@@ -71,11 +74,19 @@ fun NeoLudoNavHost(
     val navController = rememberNavController()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val scope = coroutineScope
+    val context = LocalContext.current
 
     val profile by app.profileRepository.profile.collectAsState(initial = UserProfile())
     val stats by app.statsRepository.stats.collectAsState(initial = UserStats())
     val settings by app.settingsRepository.settings.collectAsState(initial = GameSettings())
-    var activeOnlineClient by remember { mutableStateOf<FirebaseMultiplayerClient?>(null) }
+    var activeOnlineClient by remember { mutableStateOf<OnlineRoomClient?>(null) }
+    var lastGameRoute by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(settings.soundVolume, settings.soundEnabled, settings.hapticsEnabled) {
+        app.soundController.soundVolume = settings.soundVolume
+        app.soundController.soundEnabled = settings.soundEnabled
+        app.hapticController.hapticsEnabled = settings.hapticsEnabled
+    }
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route,
@@ -102,6 +113,9 @@ fun NeoLudoNavHost(
                 onNavigateFriends = {
                     navController.navigate(Screen.CreateRoom.route)
                 },
+                onNavigateJoinRoom = {
+                    navController.navigate(Screen.JoinRoom.route)
+                },
                 onStartLocal = { count ->
                     navController.navigate(Screen.Game.createRoute("LOCAL", "local_match", count, "NORMAL", "RED"))
                 },
@@ -112,32 +126,33 @@ fun NeoLudoNavHost(
                 onNavigateSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateRules = { navController.navigate(Screen.Rules.route) },
                 onNavigateFriendsList = { navController.navigate(Screen.Friends.route) },
-                onNavigateLocker = { navController.navigate(Screen.Locker.route) }
+                onNavigateLocker = { navController.navigate(Screen.Locker.route) },
+                onClaimDailyBonus = {
+                    coroutineScope.launch { app.profileRepository.claimDailyReward(200, 10) }
+                }
             )
         }
 
         composable(Screen.CreateRoom.route) {
             CreateRoomScreen(
-                onRoomCreated = { roomId, count, color ->
-                    val client = FirebaseMultiplayerClient(
+                onCreateRoom = { count, fillBots, rules, color ->
+                    // Firebase when this build ships google-services.json,
+                    // otherwise the free public relay — no setup either way.
+                    val client = OnlineClientFactory.create(
+                        context = context,
                         localPlayerId = profile.id,
                         localPlayerName = profile.displayName,
                         localAvatarId = profile.avatarId,
                         preferredColor = color,
-                        initialRoomId = roomId,
                         maxPlayers = count,
-                        ruleSet = LudoRuleSet(
-                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
-                            penalty3xSix = settings.penalty3xSix,
-                            turnTimerSeconds = settings.turnTimerSeconds
-                        ),
-                        autoStartMatch = false
+                        ruleSet = rules
                     )
-                    coroutineScope.launch {
-                        client.createRoom(count)
+                    val result = client.createRoom(count, fillBots, rules)
+                    if (result.isSuccess) {
                         activeOnlineClient = client
-                        navController.navigate(Screen.Lobby.createRoute(roomId))
+                        navController.navigate(Screen.Lobby.createRoute(client.currentRoomId))
                     }
+                    result
                 },
                 onNavigateJoin = {
                     navController.navigate(Screen.JoinRoom.route)
@@ -148,25 +163,21 @@ fun NeoLudoNavHost(
 
         composable(Screen.JoinRoom.route) {
             JoinRoomScreen(
-                onJoinSuccess = { roomId ->
-                    val client = FirebaseMultiplayerClient(
+                onJoinRoom = { roomId ->
+                    val client = OnlineClientFactory.create(
+                        context = context,
                         localPlayerId = profile.id,
                         localPlayerName = profile.displayName,
                         localAvatarId = profile.avatarId,
                         initialRoomId = roomId,
-                        maxPlayers = 4,
-                        ruleSet = LudoRuleSet(
-                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
-                            penalty3xSix = settings.penalty3xSix,
-                            turnTimerSeconds = settings.turnTimerSeconds
-                        ),
-                        autoStartMatch = false
+                        maxPlayers = 4
                     )
-                    coroutineScope.launch {
-                        client.joinRoom(roomId)
+                    val result = client.joinRoom(roomId)
+                    if (result.isSuccess) {
                         activeOnlineClient = client
-                        navController.navigate(Screen.Lobby.createRoute(roomId))
+                        navController.navigate(Screen.Lobby.createRoute(client.currentRoomId))
                     }
+                    result
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -178,7 +189,8 @@ fun NeoLudoNavHost(
         ) { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: "NL-1234"
             val client = activeOnlineClient ?: remember(roomId) {
-                FirebaseMultiplayerClient(
+                OnlineClientFactory.create(
+                    context = context,
                     localPlayerId = profile.id,
                     localPlayerName = profile.displayName,
                     localAvatarId = profile.avatarId,
@@ -188,8 +200,7 @@ fun NeoLudoNavHost(
                         autoMoveSinglePiece = settings.autoMoveSinglePiece,
                         penalty3xSix = settings.penalty3xSix,
                         turnTimerSeconds = settings.turnTimerSeconds
-                    ),
-                    autoStartMatch = false
+                    )
                 )
             }
             LobbyWaitingRoomScreen(
@@ -201,7 +212,11 @@ fun NeoLudoNavHost(
                         popUpTo(Screen.Home.route)
                     }
                 },
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    activeOnlineClient?.release()
+                    activeOnlineClient = null
+                    navController.popBackStack()
+                }
             )
         }
 
@@ -223,6 +238,10 @@ fun NeoLudoNavHost(
             val colorStr = backStackEntry.arguments?.getString("color") ?: "RED"
             val chosenColor = runCatching { PlayerColor.valueOf(colorStr) }.getOrDefault(PlayerColor.RED)
 
+            LaunchedEffect(mode, roomId, playerCount, difficultyStr, colorStr) {
+                lastGameRoute = Screen.Game.createRoute(mode, roomId, playerCount, difficultyStr, colorStr)
+            }
+
             val client = remember(mode, roomId, playerCount, difficulty, chosenColor) {
                 when (mode) {
                     "AI" -> BotMultiplayerClient(
@@ -237,7 +256,8 @@ fun NeoLudoNavHost(
                             turnTimerSeconds = settings.turnTimerSeconds
                         )
                     )
-                    "ONLINE" -> activeOnlineClient ?: FirebaseMultiplayerClient(
+                    "ONLINE" -> activeOnlineClient ?: OnlineClientFactory.create(
+                        context = context,
                         localPlayerId = profile.id,
                         localPlayerName = profile.displayName,
                         localAvatarId = profile.avatarId,
@@ -248,8 +268,7 @@ fun NeoLudoNavHost(
                             autoMoveSinglePiece = settings.autoMoveSinglePiece,
                             penalty3xSix = settings.penalty3xSix,
                             turnTimerSeconds = settings.turnTimerSeconds
-                        ),
-                        autoStartMatch = true
+                        )
                     )
                     else -> LocalMultiplayerClient(
                         playerCount = playerCount,
@@ -269,15 +288,40 @@ fun NeoLudoNavHost(
                 boardTheme = settings.boardTheme,
                 diceSkin = settings.diceSkin,
                 pawnSkin = settings.pawnSkin,
+                reducedMotion = settings.reducedMotion,
                 onUpdateTheme = { newTheme ->
                     coroutineScope.launch { app.settingsRepository.updateSettings(settings.copy(boardTheme = newTheme)) }
                 },
                 onGameFinished = { winnerColor, captures, sixes ->
+                    val isWin = winnerColor == chosenColor
+                    coroutineScope.launch {
+                        app.statsRepository.recordMatchResult(
+                            isWin = isWin,
+                            mode = mode,
+                            capturesMade = captures,
+                            sixesRolled = sixes,
+                            piecesHome = if (isWin) 4 else 0,
+                            winnerColor = winnerColor.name
+                        )
+                        if (isWin) {
+                            val rewardCoins = when (mode) {
+                                "ONLINE" -> 1000
+                                "AI" -> 500
+                                else -> 250
+                            }
+                            val rewardGems = if (mode == "ONLINE") 5 else 2
+                            app.profileRepository.addCurrency(rewardCoins, rewardGems)
+                        }
+                    }
+                    activeOnlineClient = null
                     navController.navigate(Screen.Result.createRoute(winnerColor.name, captures, sixes)) {
                         popUpTo(Screen.Home.route)
                     }
                 },
-                onExitGame = { navController.popBackStack() }
+                onExitGame = {
+                    activeOnlineClient = null
+                    navController.popBackStack()
+                }
             )
         }
 
@@ -298,8 +342,17 @@ fun NeoLudoNavHost(
                 captures = captures,
                 sixes = sixes,
                 onPlayAgain = {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
+                    val replay = lastGameRoute
+                    // ONLINE rooms can't be replayed (room finished) — go Home.
+                    // AI/LOCAL replay the stored game route with a fresh client.
+                    if (replay != null && !replay.startsWith("game/ONLINE")) {
+                        navController.navigate(replay) {
+                            popUpTo(Screen.Home.route)
+                        }
+                    } else {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
                     }
                 },
                 onMainMenu = {
@@ -346,6 +399,7 @@ fun NeoLudoNavHost(
 
         composable(Screen.Locker.route) {
             LockerScreen(
+                profile = profile,
                 currentBoardTheme = settings.boardTheme,
                 currentDiceSkin = settings.diceSkin,
                 currentPawnSkin = settings.pawnSkin,
@@ -365,6 +419,27 @@ fun NeoLudoNavHost(
                     coroutineScope.launch {
                         app.settingsRepository.updateSettings(settings.copy(pawnSkin = skin))
                         app.profileRepository.updateProfile(profile.copy(selectedPawnSkin = skin))
+                    }
+                },
+                onUnlockBoardTheme = { theme, c, g ->
+                    coroutineScope.launch {
+                        if (app.profileRepository.unlockBoardTheme(theme, c, g)) {
+                            app.settingsRepository.updateSettings(settings.copy(boardTheme = theme))
+                        }
+                    }
+                },
+                onUnlockDiceSkin = { skin, c, g ->
+                    coroutineScope.launch {
+                        if (app.profileRepository.unlockDiceSkin(skin, c, g)) {
+                            app.settingsRepository.updateSettings(settings.copy(diceSkin = skin))
+                        }
+                    }
+                },
+                onUnlockPawnSkin = { skin, c, g ->
+                    coroutineScope.launch {
+                        if (app.profileRepository.unlockPawnSkin(skin, c, g)) {
+                            app.settingsRepository.updateSettings(settings.copy(pawnSkin = skin))
+                        }
                     }
                 },
                 onBack = { navController.popBackStack() }

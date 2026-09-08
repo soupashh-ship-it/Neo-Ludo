@@ -1,25 +1,73 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
     "rooms": {
       "$roomId": {
-        ".read": true,
-        ".write": "auth != null || !data.exists()",
+        ".read": "auth != null",
+        ".write": "auth != null",
+
         "meta": {
-          ".validate": "newData.hasChildren(['roomId', 'hostId', 'status'])"
-        },
-        "players": {
-          "$playerId": {
-            ".write": "auth != null || $playerId === newData.child('id').val() || !data.exists()"
+          ".validate": "newData.hasChildren(['roomId', 'hostId', 'status'])",
+          "status": {
+            ".validate": "newData.val() == 'CREATING' || newData.val() == 'LOBBY' || newData.val() == 'STARTING' || newData.val() == 'IN_GAME' || newData.val() == 'PAUSED' || newData.val() == 'RECONNECTING' || newData.val() == 'COMPLETED' || newData.val() == 'ABANDONED'"
+          },
+          "hostId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 128"
+          },
+          "hostEpoch": {
+            ".validate": "!newData.exists() || (newData.isNumber() && (!data.exists() || newData.val() >= data.val()))"
           }
         },
-        "gameState": {
-          ".write": "true"
+
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid",
+            ".validate": "newData.hasChildren(['id', 'name', 'color']) && newData.child('id').val() == $uid && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 30 && (newData.child('color').val() == 'RED' || newData.child('color').val() == 'GREEN' || newData.child('color').val() == 'YELLOW' || newData.child('color').val() == 'BLUE')",
+            "isConnected": {
+              ".validate": "newData.isBoolean()"
+            },
+            "isReady": {
+              ".validate": "newData.isBoolean()"
+            },
+            "lastSeen": {
+              ".validate": "!newData.exists() || newData.isNumber()"
+            }
+          }
         },
+
+        "state": {
+          ".validate": "newData.hasChildren(['raw', 'version', 'activePlayerIndex', 'turnPhase']) && newData.child('raw').isString() && newData.child('raw').val().length < 60000",
+          "version": {
+            ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+          },
+          "activePlayerIndex": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 4"
+          }
+        },
+
         "actions": {
-          ".write": "true"
+          "$actionId": {
+            ".validate": "newData.hasChildren(['actionId', 'type', 'playerId']) && (!data.exists()) && newData.child('actionId').isString() && newData.child('playerId').isString() && newData.child('payload').val().length < 256 && (newData.child('type').val() == 'ROLL_DICE' || newData.child('type').val() == 'MOVE_PIECE' || newData.child('type').val() == 'PASS_TURN' || newData.child('type').val() == 'SET_READY' || newData.child('type').val() == 'START_GAME' || newData.child('type').val() == 'LEAVE_ROOM')",
+            "sequence": {
+              ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000)"
+            },
+            "timestamp": {
+              ".validate": "!newData.exists() || (newData.isNumber() && newData.val() <= (now + 60000))"
+            }
+          }
         },
+
+        "events": {
+          "$eventId": {
+            ".validate": "newData.hasChildren(['eventId', 'type']) && (!data.exists())"
+          }
+        },
+
         "chat": {
-          ".write": "true"
+          "$chatId": {
+            ".validate": "newData.hasChildren(['id', 'senderId', 'senderName']) && (!data.exists()) && newData.child('senderName').val().length <= 30 && ((!newData.hasChild('message') || newData.child('message').val().length <= 280) && (!newData.hasChild('emoteId') || newData.child('emoteId').val().length <= 64))"
+          }
         }
       }
     }

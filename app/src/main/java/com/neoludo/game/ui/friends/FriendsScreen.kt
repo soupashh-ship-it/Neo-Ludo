@@ -130,8 +130,36 @@ fun FriendsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(friends) { friend ->
-                    FriendCard(friend = friend)
+                if (friends.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "No friends yet",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Tap + to add someone you know.",
+                                color = NeoLudoColors.BrutalistTextMutedOnInk,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                } else {
+                    items(friends, key = { it.id }) { friend ->
+                        FriendCard(
+                            friend = friend,
+                            onInvite = { /* TODO: wire room invite via share intent */ },
+                            onRemove = { friendRepository.removeFriend(friend.id) }
+                        )
+                    }
                 }
             }
         }
@@ -200,13 +228,18 @@ fun FriendsScreen(
 }
 
 @Composable
-private fun FriendCard(friend: Friend) {
+private fun FriendCard(
+    friend: Friend,
+    onInvite: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(16.dp)),
-        color = NeoLudoColors.ObsidianSurfaceCard
+            .clip(RoundedCornerShape(14.dp))
+            .border(2.dp, NeoLudoColors.BrutalistLine, RoundedCornerShape(14.dp)),
+        color = NeoLudoColors.BrutalistInkSoft
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -256,16 +289,21 @@ private fun FriendCard(friend: Friend) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(NeoLudoColors.CobaltBlue.copy(alpha = 0.2f))
-                        .border(1.dp, NeoLudoColors.CobaltBlue.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .background(NeoLudoColors.BrutalistBlue)
+                        .border(2.dp, NeoLudoColors.BrutalistLine, RoundedCornerShape(10.dp))
+                        .clickable(onClick = onInvite)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         text = "Invite",
-                        color = NeoLudoColors.CobaltBlue,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
+                }
+            } else {
+                androidx.compose.material3.TextButton(onClick = onRemove) {
+                    Text("Remove", color = NeoLudoColors.BrutalistTextMutedOnInk, fontSize = 12.sp)
                 }
             }
         }

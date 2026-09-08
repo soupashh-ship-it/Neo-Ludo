@@ -34,7 +34,7 @@ class NeoLudoApplication : Application() {
         settingsRepository = SettingsRepository(preferencesDataStore)
         profileRepository = ProfileRepository(preferencesDataStore)
         statsRepository = StatsRepository(preferencesDataStore)
-        friendRepository = FriendRepository()
+        friendRepository = FriendRepository(preferencesDataStore)
 
         soundController = SoundController(this)
         hapticController = HapticController(this)

@@ -57,6 +57,8 @@ data class DiceState(
 enum class TurnPhase {
     WAITING_FOR_ROLL,
     WAITING_FOR_MOVE,
+    /** @deprecated Unused — retained for serialized compat. Engine never enters this phase. */
+    @Deprecated("Unused, retained for serialization compat")
     AUTO_ADVANCING,
     GAME_OVER
 }
@@ -98,6 +100,7 @@ data class MoveRecord(
     val from: PiecePosition,
     val to: PiecePosition,
     val capturedPieceId: Int? = null,
+    val capturedPlayerColor: PlayerColor? = null,
     val diceValue: Int,
     val timestamp: Long = 0L
 )
@@ -137,7 +140,8 @@ data class GameState(
     val ranking: List<PlayerColor> = emptyList(),
     val ruleSet: LudoRuleSet = LudoRuleSet(),
     val moveHistory: List<MoveRecord> = emptyList(),
-    val lastEvent: GameEngineEvent? = null
+    val lastEvent: GameEngineEvent? = null,
+    val version: Long = 0L
 ) {
     val activePlayer: PlayerState get() = players[activePlayerIndex]
     val isGameOver: Boolean get() = turnPhase == TurnPhase.GAME_OVER

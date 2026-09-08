@@ -10,25 +10,42 @@
 
 An original, production-ready, ad-free Android multiplayer Ludo game engineered with **Kotlin 2.0** and **Jetpack Compose** for Android 14+ (minSdk 24, targetSdk 34/35). 
 
-Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performance **60 FPS Canvas-rendered Neo-Ludo board graphics**, dynamic **3D-styled animated dice with spring physics**, low-latency **SoundPool audio & tactile haptics**, **DataStore persistence**, and **real-time synchronized online multiplayer** with automatic AI proxy reconnection handling.
-
----
-
-## 📥 Download Direct APK
-
-Get the pre-built, ready-to-install debug APK directly from the repository:
-
-🔗 **[Download NeoLudo-v1.7.0.apk (Direct from Repo)](./release-apk/NeoLudo-v1.7.0.apk)**
+Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performance **60 FPS Canvas-rendered Neo-Ludo board graphics**, dynamic **3D-styled animated dice with spring physics**, low-latency **SoundPool audio & tactile haptics**, **DataStore persistence**, and **real-time synchronized online multiplayer** backed by Firebase Authentication and Firebase Realtime Database with action-based canonical state authority and automatic AI proxy reconnection handling.
 
 ---
 
 ## ✨ Features & Game Modes
 
 ### 🎮 Game Modes
-1. **Play Online**: Real-time room matchmaking & quick join with real players worldwide.
-2. **Play with Friends**: Create private rooms with custom 6-character room codes (`NL-XXXX`), real-time waiting lobby, 1-tap copy/share intent, and player ready states.
+1. **Play with Friends**: Create private rooms with custom 6-character room codes (`NL-XXXXXX`), real-time waiting lobby, 1-tap copy/share intent, host bot filling, and atomic player presence.
+2. **Play Online**: Real-time room matchmaking & quick join with real players worldwide.
 3. **Pass & Play (Local)**: 100% offline match for 2, 3, or 4 players on a single device screen with zero latency.
 4. **Vs Computer (AI)**: Solo play against 1–3 intelligent bots across 3 difficulty tiers (`Easy`, `Normal`, `Hard`).
+
+### 🌐 Online Play — Zero Setup (Free Public Relay)
+
+Private online rooms **just work after install — no account, no server, no config file.**
+The app syncs over a free public MQTT relay (HiveMQ / EMQX, TLS-first) with the
+same host-authoritative engine as Firebase mode: the room host's phone computes
+canonical turns, late joiners catch up from the retained snapshot, and presence
+(explicit leave + crash detection) drives host migration and AFK AI takeover.
+
+**To play with friends (up to 4, anywhere):**
+1. Everyone installs the **same APK** and opens the game (internet required).
+2. Host: **Play with Friends → Create Room** → pick player count → share the
+   `NL-XXXXXX` code (Copy / Share buttons in the lobby).
+3. Friends: **Join Room** → enter the code → **Ready Up**.
+4. Host taps **Start Game** (can fill empty seats with bots).
+
+Notes & limits:
+- Public relays are best-effort (no SLA) and obscurity-private: room traffic is
+  unlisted but guessable from the code, so don't share personal info in names/chat.
+- If the host's app dies mid-match, the lowest-joined connected player takes
+  over automatically; AFK players are auto-played after the turn timer.
+- Prefer your own backend? Add `app/google-services.json` from your Firebase
+  project (enable Anonymous Auth + Realtime Database, deploy
+  `database.rules.json`) and rebuild — the app switches to Firebase
+  automatically with zero code changes.
 
 ### 🧠 Pure Kotlin Deterministic Rule Engine
 - Standard **15x15 Ludo coordinate grid** with 52 perimeter path cells.
@@ -38,48 +55,17 @@ Get the pre-built, ready-to-install debug APK directly from the repository:
 - **3x Consecutive Sixes Penalty**: Official tournament rule forfeiting the turn on 3 consecutive 6s (customizable in rules).
 - **Exact Roll Home Entry**: Private 5-step colored home stretch requiring an exact dice roll to reach center Home (`step 56`).
 
-### 🤖 3-Tier AI Opponent Engine
-- **Easy AI**: Release priority on 6 with random exploration.
-- **Normal AI (Tactical Heuristics)**: Weighted tactical decision tree (`Score Home > Capture Enemy > Release from Yard > Safe Zone Entry > Escape Threat > Advance`).
-- **Hard AI (Threat Probability & Danger Heatmap)**: Computes enemy strike zones, risk ratios, vulnerability penalties, and positional safety scoring.
-
-### 🎨 Neo-Ludo Multi-Theme Visual System & Cosmetics Locker
-- **5 Selectable Board Themes**:
-  - **Classic Arcade**: Vibrant primary colors, crisp white bases, directional start arrows & classic arcade board (Ludo King style).
-  - **Cyber Obsidian**: Deep space dark canvas with neon laser borders & glowing circuits.
-  - **Royal Parchment**: Vintage antique parchment board with warm gold filigree & wood trims.
-  - **Synthwave Neon**: 80s retro cyber grid with electric magenta, cyan & hyperglow rails.
-  - **Frost Titanium**: Sleek frosted ice-glass with crystalline borders & minimal sheen.
-- **5 Customizable 3D Dice Skins**:
-  - **Ruby Arcade**: Bold arcade crimson red die with crisp white pips.
-  - **Classic Ivory**: Traditional resin ivory with smooth beveled dark pips.
-  - **Prism Crystal**: Translucent refractive crystal with glowing neon pips.
-  - **Carbon Cyber**: High-tech woven carbon fiber with electric cyan pips.
-  - **Royal Gold**: Polished 24k gold with inlaid ruby gemstone pips.
-- **4 Custom Pawn Token Styles**:
-  - **GPS Map Pins**: Classic white teardrop marker tokens with saturated colored cores & poker-chip base (matching classic mobile Ludo).
-  - **Cyber Pips**: Glass neon orb tokens with orbiting pulse ring.
-  - **Royal Crowns**: Sculpted 3D golden imperial crown with inlaid gem.
-  - **Crystal Gems**: Faceted hexagonal gem tokens with crystal shine.
-- **Smooth Visual State Animation Engine & Zero-Glitch Piece Movement**:
-  - **Visual-Engine State Decoupling**: Board rendering now tracks in-progress visual positions (`visualPositions`) independently of future raw engine state, eliminating position snapping and piece teleporting.
-  - **Glitch-Free Multi-Piece Clustering**: Other players' tokens on origin and destination cells remain rock-solid in place without jittering or shifting while a piece is mid-animation.
-  - **Delayed Capture Transition**: Captured enemy pieces remain on their tile until the moving piece physically lands on them, at which point the capture shockwave plays and the token smoothly returns to the yard.
-  - **Parabolic Jump & Yard Lift Physics**: Dedicated high-arc lift when exiting the yard and rhythmic single-cell hops along the board path.
-  - **Play with Friends (Vault Art)**: Duo player map pins with golden key, sparkle aura, and private room lobby badge.
-  - **Pass & Play (Arena Art)**: 4-corner miniature wooden Ludo board with 4 colored tokens and offline badge.
-  - **Vs Computer (Cyber AI Art)**: Futuristic mechanical robot pawn with cyan holographic visor and difficulty tiers.
-  - **Cosmetics Locker (Skin Vault Art)**: Faceted crystal gem & 3D floating dice vault.
-  - **Confetti Celebration & 3-Tier Victory Podium**: Post-match ceremony with falling confetti particles.
-- **Career Hub & Match History**:
-  - 16 selectable avatar badges & player title badges (`Grandmaster`, `Dice Sorcerer`, `Board Conqueror`, `Pawn Crusher`, `Casual Roller`, `Speed Demon`).
-  - Match history log with win/loss badges, captures count, sixes rolled, and timestamp tracking.
-
-### ⚡ Networking & Sync Engine
+### ⚡ Realtime Multiplayer Architecture
+- **Action-Based Authority:** Clients submit actions (`ROLL_DICE`, `MOVE_PIECE`, `PASS_TURN`, `SET_READY`), and the designated host/authority deterministically computes canonical `GameState` updates and monotonically increments `version`.
+- **Zero Polling & Zero Fake Fallbacks:** 100% reactive listeners via Firebase Realtime Database SDK (`ValueEventListener` & `ChildEventListener`).
+- **Atomic Joins:** Firebase Realtime Database transactions prevent race conditions, seat collisions, and color conflicts.
+- **Presence & Auto Reconnection:** Real-time `.info/connected` status tracking with automatic state reconciliation upon reconnection.
+- **Deterministic Timeout & AI Takeover:** Authoritative turn timer resolution prevents competing client actions when a player disconnects or is AFK.
+- **Host Migration:** If the room host disconnects, the lowest connected UID is automatically elected as the new authoritative host with incremented `hostEpoch`.
 
 ---
 
-## 🏛️ Project Architecture
+## 🏛️ Project Structure
 
 ```text
 com.neoludo.game/
@@ -92,22 +78,23 @@ com.neoludo.game/
 │   ├── model/           # GameState, PlayerState, Piece, PiecePosition, DiceState, TurnPhase
 │   ├── rules/           # MoveValidator, MoveCalculation, Capture Logic
 │   └── ai/              # LudoBotEngine, Difficulty (Easy, Normal, Hard), Danger Heatmaps
-├── multiplayer/         # Multiplayer Client Abstraction Layer
+├── multiplayer/         # Multiplayer Architecture
 │   ├── MultiplayerClient.kt         # Unified Game Session Interface
 │   ├── LocalMultiplayerClient.kt    # Offline Pass & Play Controller
 │   ├── BotMultiplayerClient.kt      # Offline Human vs AI Bot Controller
 │   ├── FirebaseMultiplayerClient.kt # Real-time Synchronized Network Multiplayer
-│   ├── model/           # RoomMetadata, PlayerPresence, NetworkAction, ChatEvent
-│   └── sync/            # StateReconciler, ReconnectManager, DisconnectAiProxy
+│   ├── backend/         # FirebaseAuthDataSource, FirebaseRoomDataSource
+│   ├── model/           # RoomMetadata, PlayerPresence, NetworkAction, NetworkEvent, ChatEvent
+│   ├── repository/      # RoomRepository, ActionRepository, PresenceRepository, ChatRepository
+│   └── sync/            # ActionDeduplicator, AuthoritativeGameProcessor, HostElectionManager
 ├── data/
 │   ├── datastore/       # PreferencesDataStore (Theme, Audio, Timer, Rules)
 │   └── repository/      # SettingsRepository, ProfileRepository, StatsRepository, FriendRepository
 └── ui/                  # Jetpack Compose Presentation Layer
     ├── navigation/      # NeoLudoNavHost, Typed Routes
-    ├── splash/          # Fast Vector Morph Splash
-    ├── home/            # Main Dashboard & Game Mode Selection Cards
+    ├── home/            # HomeHeader, PlayWithFriendsCard, GameModeGrid, DailyReward
     ├── room/            # CreateRoomScreen, JoinRoomScreen, LobbyWaitingRoomScreen
-    ├── game/            # GameScreen, CanvasLudoBoard, Dice3DRenderer, EmoteOverlay
+    ├── game/            # GameScreen, CanvasLudoBoard, TwoPlayerArcadeBottomBar, EmoteOverlay
     ├── result/          # GameResultScreen, Podium Rankings & Match Highlights
     ├── profile/         # ProfileScreen, 16 Avatar Selectors, Lifetime Stats
     ├── friends/         # FriendsScreen, Live Online Status, Add Friend Dialog
@@ -130,42 +117,24 @@ com.neoludo.game/
 git clone https://github.com/soupashh-ship-it/Neo-Ludo.git
 cd Neo-Ludo
 
-# Run all pure Kotlin unit tests (Rules, AI, Multiplayer Sync)
-./gradlew testDebugUnitTest
+# Run all unit and integration tests
+./gradlew test
 
 # Assemble the debug APK
 ./gradlew assembleDebug
-```
 
-The generated APK will be available at:
-`app/build/outputs/apk/debug/app-debug.apk`
+# Assemble the release APK
+./gradlew assembleRelease
+```
 
 ---
 
 ## 🧪 Automated Test Suite
 
-The project includes unit test coverage for the core game mechanics:
-- **`LudoGameEngineTest`**:
-  - `testDiceRollUpdatesStateAndLegalMoves`
-  - `testYardPieceEntersBoardOnSix`
-  - `testStandardPathAdvancement`
-  - `testSafeZonesPreventCaptures`
-  - `testCaptureOnUnsafeCellSendsEnemyToYardAndGrantsBonusTurn`
-  - `testExactRollRequiredForHome`
-  - `testReachingHomeGrantsBonusTurn`
-  - `testThreeConsecutiveSixesForfeitsTurn`
-  - `testMultiplayerRankingAndGameOver`
-- **`LudoBotEngineTest`**:
-  - `testEasyBotReleasesPieceOnSix`
-  - `testNormalBotPrefersWinningOverCapturing`
-  - `testNormalBotPrefersCapturingOverSimpleMove`
-  - `testAutomatedAiGameSimulationPlaysOnlyLegalMoves`
-- **`MultiplayerSyncTest`**:
-  - `testStateReconcilerRejectsDuplicatesAndOutOfOrderPackets`
-  - `testDisconnectAiProxyExecutesLegalMoveWhenWaitingForRoll`
-  - `testDisconnectAiProxyExecutesLegalMoveWhenWaitingForMove`
-  - `testLocalMultiplayerClientTurnCycle`
-  - `testBotMultiplayerClientInitialization`
+- **`LudoGameEngineTest`**: Engine rules, exact home rolls, bonus turns, 3x sixes penalty, multi-player rankings.
+- **`LudoBotEngineTest`**: AI decision heuristics, safe cell threat evaluation, full game simulation.
+- **`MultiplayerSyncTest`**: Action deduplication, host election on disconnect, authoritative game processor, turn flow, piece captures, room code normalization, and local turn cycles.
+- **`EconomyAndStatsTest`**: Lifetime stats, win rate caps, currency spending, cosmetics unlocks.
 
 ---
 
@@ -175,14 +144,4 @@ The project includes unit test coverage for the core game mechanics:
 MIT License
 
 Copyright (c) 2026 Neo Ludo Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
 ```

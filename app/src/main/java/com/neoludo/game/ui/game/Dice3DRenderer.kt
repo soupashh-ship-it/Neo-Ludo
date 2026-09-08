@@ -32,6 +32,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.neoludo.game.core.designsystem.NeoLudoColors
@@ -51,7 +55,8 @@ fun Dice3DRenderer(
     onRollClick: () -> Unit,
     skin: DiceSkin = DiceSkin.PRISM_CRYSTAL,
     modifier: Modifier = Modifier,
-    sizeDp: Dp = 72.dp
+    sizeDp: Dp = 72.dp,
+    motionEnabled: Boolean = true
 ) {
     val accentColor = NeoLudoColors.getPlayerColor(playerColor)
     val rotationZAnim = remember { Animatable(0f) }
@@ -63,25 +68,33 @@ fun Dice3DRenderer(
 
     var displayedValue by remember { mutableIntStateOf(diceState.value) }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "dice_glow")
-    val glowScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow_scale"
-    )
-    val sparklePulse by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "sparkle_pulse"
-    )
+    // Reduced-motion: static glow, no infinite pulse/sparkle loop.
+    val glowScale: Float
+    val sparklePulse: Float
+    if (motionEnabled) {
+        val infiniteTransition = rememberInfiniteTransition(label = "dice_glow")
+        glowScale = infiniteTransition.animateFloat(
+            initialValue = 0.95f,
+            targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(700, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glow_scale"
+        ).value
+        sparklePulse = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(4000, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "sparkle_pulse"
+        ).value
+    } else {
+        glowScale = 1f
+        sparklePulse = 0f
+    }
 
     LaunchedEffect(isRolling) {
         if (isRolling) {
@@ -147,8 +160,16 @@ fun Dice3DRenderer(
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = diceState.canRoll && !isRolling,
+                role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Roll dice showing ${displayedValue}",
                 onClick = onRollClick
-            ),
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Dice showing ${displayedValue}. " +
+                    if (diceState.canRoll && !isRolling) "Tap to roll." else "Waiting."
+                stateDescription = if (isRolling) "Rolling" else "Showing ${displayedValue}"
+                if (!(diceState.canRoll && !isRolling)) disabled()
+            },
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(sizeDp)) {
@@ -165,8 +186,8 @@ fun Dice3DRenderer(
                 )
             }
 
-            // Rolling speed trail particles
-            if (isRolling) {
+            // Rolling speed trail particles (suppressed under reduced motion)
+            if (isRolling && motionEnabled) {
                 drawRollingParticles(dSize, accentColor)
             }
 

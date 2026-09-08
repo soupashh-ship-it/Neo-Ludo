@@ -72,7 +72,12 @@ data class UserProfile(
     val selectedDiceSkin: DiceSkin = DiceSkin.PRISM_CRYSTAL,
     val selectedPawnSkin: PawnSkin = PawnSkin.CYBER_PIPS,
     val selectedBoardTheme: BoardTheme = BoardTheme.CYBER_OBSIDIAN,
-    val isAnonymous: Boolean = true
+    val isAnonymous: Boolean = true,
+    val coins: Int = 25000,
+    val gems: Int = 120,
+    val unlockedThemes: Set<BoardTheme> = setOf(BoardTheme.CYBER_OBSIDIAN, BoardTheme.CLASSIC_ARCADE),
+    val unlockedDice: Set<DiceSkin> = setOf(DiceSkin.PRISM_CRYSTAL, DiceSkin.CLASSIC_IVORY),
+    val unlockedPawns: Set<PawnSkin> = setOf(PawnSkin.CYBER_PIPS, PawnSkin.MAP_PINS)
 )
 
 @Serializable

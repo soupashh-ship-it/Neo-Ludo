@@ -27,7 +27,11 @@ class LocalMultiplayerClient(
     playerNames: List<String> = listOf("Red", "Green", "Yellow", "Blue")
 ) : MultiplayerClient {
     private val mutex = Mutex()
-    private val colors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE).take(playerCount)
+    private val colors = if (playerCount == 2) {
+        listOf(PlayerColor.RED, PlayerColor.YELLOW)
+    } else {
+        listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE).take(playerCount)
+    }
     private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 

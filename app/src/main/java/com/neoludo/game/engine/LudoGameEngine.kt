@@ -30,6 +30,12 @@ object LudoGameEngine {
         ruleSet: LudoRuleSet = LudoRuleSet()
     ): GameState {
         require(playerConfigs.size in 2..4) { "Player count must be between 2 and 4" }
+        require(playerConfigs.map { it.id }.toSet().size == playerConfigs.size) {
+            "Duplicate player ids: ${playerConfigs.map { it.id }}"
+        }
+        require(playerConfigs.map { it.color }.toSet().size == playerConfigs.size) {
+            "Duplicate player colors: ${playerConfigs.map { it.color }}"
+        }
 
         val players = playerConfigs.map { cfg ->
             PlayerState(
@@ -61,19 +67,31 @@ object LudoGameEngine {
         if (state.isGameOver || state.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
             return state
         }
+        if (!state.diceState.canRoll || state.diceState.isRolled) {
+            return state
+        }
+        require(forcedValue == null || forcedValue in 1..6) {
+            "forcedValue must be in 1..6, was $forcedValue"
+        }
 
         val activePlayer = state.activePlayer
         val rollValue = forcedValue ?: Random.nextInt(1, 7)
-        val newConsecutiveSixes = if (rollValue == 6) state.diceState.consecutiveSixes + 1 else 0
+        // When the 3xSix penalty is disabled the streak must not accumulate.
+        val newConsecutiveSixes = when {
+            !state.ruleSet.penalty3xSix -> 0
+            rollValue == 6 -> state.diceState.consecutiveSixes + 1
+            else -> 0
+        }
 
         // 3 consecutive sixes penalty
         if (state.ruleSet.penalty3xSix && newConsecutiveSixes == 3) {
             val nextIndex = getNextActivePlayerIndex(state.players, state.activePlayerIndex)
             return state.copy(
                 activePlayerIndex = nextIndex,
-                diceState = DiceState(value = rollValue, isRolled = true, consecutiveSixes = 0, canRoll = true),
+                diceState = DiceState(value = 0, isRolled = false, consecutiveSixes = 0, canRoll = true),
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
-                lastEvent = GameEngineEvent.TurnForfeited3xSix(activePlayer.color)
+                lastEvent = GameEngineEvent.TurnForfeited3xSix(activePlayer.color),
+                version = state.version + 1
             )
         }
 
@@ -83,9 +101,10 @@ object LudoGameEngine {
             val nextIndex = getNextActivePlayerIndex(state.players, state.activePlayerIndex)
             return state.copy(
                 activePlayerIndex = nextIndex,
-                diceState = DiceState(value = rollValue, isRolled = true, consecutiveSixes = 0, canRoll = true),
+                diceState = DiceState(value = 0, isRolled = false, consecutiveSixes = 0, canRoll = true),
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
-                lastEvent = GameEngineEvent.TurnPassedNoMoves(activePlayer.color)
+                lastEvent = GameEngineEvent.TurnPassedNoMoves(activePlayer.color),
+                version = state.version + 1
             )
         }
 
@@ -97,7 +116,8 @@ object LudoGameEngine {
                 canRoll = false
             ),
             turnPhase = TurnPhase.WAITING_FOR_MOVE,
-            lastEvent = GameEngineEvent.DiceRolled(activePlayer.color, rollValue, newConsecutiveSixes)
+            lastEvent = GameEngineEvent.DiceRolled(activePlayer.color, rollValue, newConsecutiveSixes),
+            version = state.version + 1
         )
     }
 
@@ -115,21 +135,20 @@ object LudoGameEngine {
         val destination = moveCalc.destination
         val updatedPiece = originalPiece.copy(position = destination)
 
-        var enemyCaptured: Pair<PlayerState, Piece>? = null
+        val captured = moveCalc.capturedEnemyPiece
         val updatedPlayers = state.players.map { player ->
-            when (player.color) {
-                activePlayer.color -> {
+            when (player.id) {
+                activePlayer.id -> {
                     val newPieces = player.pieces.map { p ->
                         if (p.id == pieceId) updatedPiece else p
                     }
                     player.copy(pieces = newPieces)
                 }
-                moveCalc.capturedEnemyPiece?.first?.color -> {
-                    val capturedPiece = moveCalc.capturedEnemyPiece.second
-                    enemyCaptured = moveCalc.capturedEnemyPiece
+                captured?.first?.id -> {
+                    val capturedPiece = captured.second
                     val newPieces = player.pieces.map { p ->
                         if (p.id == capturedPiece.id) {
-                            p.copy(position = PiecePosition.Yard(capturedPiece.id))
+                            p.copy(position = PiecePosition.Yard(capturedPiece.id.coerceIn(0, 3)))
                         } else p
                     }
                     player.copy(pieces = newPieces)
@@ -137,8 +156,9 @@ object LudoGameEngine {
                 else -> player
             }
         }
+        val enemyCaptured: Pair<PlayerState, Piece>? = captured
 
-        val updatedActivePlayer = updatedPlayers.first { it.color == activePlayer.color }
+        val updatedActivePlayer = updatedPlayers.first { it.id == activePlayer.id }
         val playerJustFinished = updatedActivePlayer.hasFinished && activePlayer.rank == null
 
         val updatedRanking = if (playerJustFinished) {
@@ -147,12 +167,12 @@ object LudoGameEngine {
 
         val finalPlayers = if (playerJustFinished) {
             updatedPlayers.map { p ->
-                if (p.color == activePlayer.color) p.copy(rank = updatedRanking.size) else p
+                if (p.id == activePlayer.id) p.copy(rank = updatedRanking.size) else p
             }
         } else updatedPlayers
 
         val remainingActiveCount = finalPlayers.count { !it.hasFinished }
-        val isGameOver = remainingActiveCount <= 1 || (finalPlayers.size == 2 && remainingActiveCount == 1)
+        val isGameOver = remainingActiveCount <= 1
 
         val record = MoveRecord(
             pieceId = pieceId,
@@ -160,6 +180,7 @@ object LudoGameEngine {
             from = originalPiece.position,
             to = destination,
             capturedPieceId = enemyCaptured?.second?.id,
+            capturedPlayerColor = enemyCaptured?.first?.color,
             diceValue = diceValue,
             timestamp = System.currentTimeMillis()
         )
@@ -179,7 +200,8 @@ object LudoGameEngine {
                 turnPhase = TurnPhase.GAME_OVER,
                 ranking = fullRanking,
                 moveHistory = state.moveHistory + record,
-                lastEvent = GameEngineEvent.GameOver(fullRanking.first(), fullRanking)
+                lastEvent = GameEngineEvent.GameOver(fullRanking.first(), fullRanking),
+                version = state.version + 1
             )
         }
 
@@ -215,25 +237,31 @@ object LudoGameEngine {
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
             ranking = updatedRanking,
             moveHistory = state.moveHistory + record,
-            lastEvent = lastEvent
+            lastEvent = lastEvent,
+            version = state.version + 1
         )
     }
 
     fun passTurn(state: GameState): GameState {
         if (state.isGameOver) return state
+        // Manual pass is only valid while waiting for a roll. Never allow abandoning
+        // an earned move / bonus turn in WAITING_FOR_MOVE (prevents dodging 3xSix).
+        if (state.turnPhase != TurnPhase.WAITING_FOR_ROLL) return state
         val nextIndex = getNextActivePlayerIndex(state.players, state.activePlayerIndex)
         return state.copy(
             activePlayerIndex = nextIndex,
             diceState = DiceState(value = state.diceState.value, isRolled = false, consecutiveSixes = 0, canRoll = true),
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
-            lastEvent = GameEngineEvent.TurnPassedNoMoves(state.activePlayer.color)
+            lastEvent = GameEngineEvent.TurnPassedNoMoves(state.activePlayer.color),
+            version = state.version + 1
         )
     }
 
     fun getNextActivePlayerIndex(players: List<PlayerState>, currentIndex: Int): Int {
+        if (players.isEmpty()) return 0
         var next = (currentIndex + 1) % players.size
         var attempts = 0
-        while (players[next].hasFinished && attempts < players.size) {
+        while ((players[next].hasFinished || players[next].isDisconnected) && attempts < players.size) {
             next = (next + 1) % players.size
             attempts++
         }

@@ -20,7 +20,8 @@ object LudoBotEngine {
 
     fun pickBestMove(
         state: GameState,
-        difficulty: Difficulty = Difficulty.NORMAL
+        difficulty: Difficulty = Difficulty.NORMAL,
+        random: Random = Random.Default
     ): Piece? {
         val activePlayer = state.activePlayer
         val diceValue = state.diceState.value
@@ -30,22 +31,23 @@ object LudoBotEngine {
         if (legalMoves.size == 1) return legalMoves.first().piece
 
         return when (difficulty) {
-            Difficulty.EASY -> pickEasyMove(legalMoves)
+            Difficulty.EASY -> pickEasyMove(legalMoves, random)
             Difficulty.NORMAL -> pickNormalMove(legalMoves, state)
             Difficulty.HARD -> pickHardMove(legalMoves, state)
         }
     }
 
-    private fun pickEasyMove(moves: List<MoveCalculation>): Piece {
+    private fun pickEasyMove(moves: List<MoveCalculation>, random: Random = Random.Default): Piece {
         // Easy: Always release piece from yard on 6 if possible, else random
         val yardMove = moves.find { it.piece.position is PiecePosition.Yard }
-        return yardMove?.piece ?: moves.random().piece
+        return yardMove?.piece ?: moves.random(random).piece
     }
 
     private fun pickNormalMove(moves: List<MoveCalculation>, state: GameState): Piece {
-        return moves.maxByOrNull { move ->
-            evaluateNormalMove(move, state)
-        }?.piece ?: moves.first().piece
+        // Deterministic tie-break: lowest piece id wins ties regardless of input order.
+        return moves.maxWithOrNull(
+            compareBy<MoveCalculation> { evaluateNormalMove(it, state) }.thenByDescending { -it.piece.id }
+        )?.piece ?: moves.minByOrNull { it.piece.id }?.piece ?: moves.first().piece
     }
 
     private fun evaluateNormalMove(move: MoveCalculation, state: GameState): Double {
@@ -88,15 +90,21 @@ object LudoBotEngine {
 
             // 6. Prefer advancing pieces closer to Home
             score += (dest.step * 2.0)
+
+            // 7. Set up exact-finish: leaving a piece 1..6 away from Home is valuable
+            val distanceToHome = BoardCoordinates.HOME_STEP - dest.step
+            if (dest.step in 51..55 && distanceToHome in 1..6) {
+                score += 40.0
+            }
         }
 
         return score
     }
 
     private fun pickHardMove(moves: List<MoveCalculation>, state: GameState): Piece {
-        return moves.maxByOrNull { move ->
-            evaluateHardMove(move, state)
-        }?.piece ?: moves.first().piece
+        return moves.maxWithOrNull(
+            compareBy<MoveCalculation> { evaluateHardMove(it, state) }.thenByDescending { -it.piece.id }
+        )?.piece ?: moves.minByOrNull { it.piece.id }?.piece ?: moves.first().piece
     }
 
     private fun evaluateHardMove(move: MoveCalculation, state: GameState): Double {
@@ -167,6 +175,7 @@ object LudoBotEngine {
                     val enemyGlobalIdx = BoardCoordinates.globalPathIndex(enemy.color, enemyPos.step)
                     val distance = (globalIdx - enemyGlobalIdx + BoardCoordinates.TOTAL_PATH_CELLS) % BoardCoordinates.TOTAL_PATH_CELLS
                     if (distance in 1..6) {
+                        if (enemyPos.step + distance > 50) continue
                         return true
                     }
                 }
@@ -190,6 +199,7 @@ object LudoBotEngine {
                     val enemyGlobalIdx = BoardCoordinates.globalPathIndex(enemy.color, enemyPos.step)
                     val distance = (globalIdx - enemyGlobalIdx + BoardCoordinates.TOTAL_PATH_CELLS) % BoardCoordinates.TOTAL_PATH_CELLS
                     if (distance in 1..6) {
+                        if (enemyPos.step + distance > 50) continue
                         // Threat weight inversely proportional to distance (closer = higher threat)
                         val threat = (7.0 - distance) * 40.0
                         totalSeverity += threat

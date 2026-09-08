@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.neoludo.game.core.model.BoardTheme
+import com.neoludo.game.core.model.Friend
 import com.neoludo.game.core.model.DiceSkin
 import com.neoludo.game.core.model.GameSettings
 import com.neoludo.game.core.model.PawnSkin
@@ -17,6 +18,7 @@ import com.neoludo.game.core.model.ThemeMode
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -43,6 +45,8 @@ class PreferencesDataStore(private val context: Context) {
 
         val USER_PROFILE_JSON = stringPreferencesKey("user_profile_json")
         val USER_STATS_JSON = stringPreferencesKey("user_stats_json")
+        val FRIENDS_JSON = stringPreferencesKey("friends_json")
+        val LAST_DAILY_CLAIM_DAY = stringPreferencesKey("last_daily_claim_day")
     }
 
     val settingsFlow: Flow<GameSettings> = context.dataStore.data.map { prefs ->
@@ -101,6 +105,29 @@ class PreferencesDataStore(private val context: Context) {
     suspend fun saveStats(stats: UserStats) {
         context.dataStore.edit { prefs ->
             prefs[USER_STATS_JSON] = json.encodeToString(stats)
+        }
+    }
+
+    val friendsFlow: Flow<List<Friend>> = context.dataStore.data.map { prefs ->
+        prefs[FRIENDS_JSON]?.let {
+            runCatching { json.decodeFromString<List<Friend>>(it) }.getOrNull()
+        } ?: emptyList()
+    }
+
+    suspend fun saveFriends(friends: List<Friend>) {
+        context.dataStore.edit { prefs ->
+            prefs[FRIENDS_JSON] = json.encodeToString(friends)
+        }
+    }
+
+    suspend fun getLastDailyClaimDay(): Long {
+        // -1 = never claimed. EpochDay comparison in repository is timezone-safe per device.
+        return context.dataStore.data.map { it[LAST_DAILY_CLAIM_DAY]?.toLongOrNull() ?: -1L }.first()
+    }
+
+    suspend fun setLastDailyClaimDay(epochDay: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[LAST_DAILY_CLAIM_DAY] = epochDay.toString()
         }
     }
 }

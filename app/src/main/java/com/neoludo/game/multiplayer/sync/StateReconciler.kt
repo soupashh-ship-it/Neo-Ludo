@@ -8,22 +8,34 @@ import com.neoludo.game.engine.model.TurnPhase
 import com.neoludo.game.multiplayer.model.NetworkAction
 
 class StateReconciler {
-    private var lastProcessedSequence: Long = 0L
     private val processedActionIds = mutableSetOf<String>()
+    private val lastSequenceBySender = mutableMapOf<String, Long>()
 
+    @Synchronized
     fun canApplyAction(action: NetworkAction): Boolean {
+        if (action.actionId.isBlank()) return false
         if (action.actionId in processedActionIds) return false
-        if (action.sequence <= lastProcessedSequence) return false
+        if (action.sequence == 0L) return true
+        if (action.sequence < 0L || action.sequence > ActionDeduplicator.MAX_SEQUENCE) return false
+        if (action.playerId.isNotBlank()) {
+            val last = lastSequenceBySender[action.playerId] ?: 0L
+            if (action.sequence <= last) return false
+        }
         return true
     }
 
+    @Synchronized
     fun recordAction(action: NetworkAction) {
-        processedActionIds.add(action.actionId)
-        lastProcessedSequence = maxOf(lastProcessedSequence, action.sequence)
+        if (action.actionId.isNotBlank()) processedActionIds.add(action.actionId)
+        if (action.sequence in 1L..ActionDeduplicator.MAX_SEQUENCE && action.playerId.isNotBlank()) {
+            val last = lastSequenceBySender[action.playerId] ?: 0L
+            if (action.sequence > last) lastSequenceBySender[action.playerId] = action.sequence
+        }
     }
 
+    @Synchronized
     fun reset() {
-        lastProcessedSequence = 0L
+        lastSequenceBySender.clear()
         processedActionIds.clear()
     }
 }
@@ -43,7 +55,11 @@ object DisconnectAiProxy {
                 if (bestMove != null) {
                     LudoGameEngine.movePiece(gameState, bestMove.id)
                 } else {
-                    LudoGameEngine.passTurn(gameState)
+                    // No legal moves: engine auto-passes on roll, so a proxy in
+                    // WAITING_FOR_MOVE with zero moves is already inconsistent —
+                    // return unchanged rather than a passTurn no-op (which is now
+                    // correctly guarded to WAITING_FOR_ROLL only).
+                    gameState
                 }
             }
             else -> gameState

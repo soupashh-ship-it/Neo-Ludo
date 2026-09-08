@@ -24,7 +24,28 @@ object NeoLudoColors {
     val TitaniumBorderGlow = Color(0xFF94A3B8)
     val TitaniumTextPrimary = Color(0xFF0F172A)
     val TitaniumTextSecondary = Color(0xFF475569)
-    val TitaniumTextMuted = Color(0xFF94A3B8)
+    val TitaniumTextMuted = Color(0xFF5B6B82)
+
+    // Club Brutalist identity — matte ink + paper, zero gradients.
+    // Single 14dp radius, 2px ink strokes, 4px hard offset shadows (no blur).
+    val BrutalistInk = Color(0xFF0E0E11)
+    val BrutalistInkSoft = Color(0xFF1A1A1F)
+    val BrutalistPaper = Color(0xFFFFFFFF)
+    val BrutalistPaperDim = Color(0xFFF1EFE9)
+    val BrutalistLine = Color(0xFF0E0E11)
+    val BrutalistMuted = Color(0xFF5C5C66)
+    // Contrast-safe on ink (>= 4.5:1 for body text)
+    val BrutalistTextOnInk = Color(0xFFF4F2EC)
+    val BrutalistTextMutedOnInk = Color(0xFFB9B7AE)
+    val BrutalistShadow = Color(0xFF0E0E11)
+    val BrutalistDisabledFill = Color(0xFF3A3A42)
+    val BrutalistDisabledText = Color(0xFFA8A8B3)
+
+    // Brutalist player solids — heritage palette at ~85% saturation, one accent per context.
+    val BrutalistRed = Color(0xFFC62828)
+    val BrutalistGreen = Color(0xFF2E7D32)
+    val BrutalistAmber = Color(0xFFB26A00)
+    val BrutalistBlue = Color(0xFF1565C0)
 
     // Player Colors: Ruby Red
     val RubyRed = Color(0xFFFF3366)
@@ -82,6 +103,14 @@ object NeoLudoColors {
             PlayerColor.YELLOW -> palette.yellowContainer
             PlayerColor.BLUE -> palette.blueContainer
         }
+    }
+
+    /** Brutalist single-accent mapping — use instead of neon glows. */
+    fun getBrutalistPlayerColor(color: PlayerColor): Color = when (color) {
+        PlayerColor.RED -> BrutalistRed
+        PlayerColor.GREEN -> BrutalistGreen
+        PlayerColor.YELLOW -> BrutalistAmber
+        PlayerColor.BLUE -> BrutalistBlue
     }
 
     fun getBoardColors(theme: BoardTheme): LudoBoardPalette = when (theme) {

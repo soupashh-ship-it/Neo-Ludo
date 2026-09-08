@@ -1,21 +1,7 @@
 package com.neoludo.game.ui.home
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,28 +18,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,20 +31,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,9 +48,6 @@ import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
 import com.neoludo.game.engine.ai.Difficulty
 import com.neoludo.game.engine.model.PlayerColor
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun HomeScreen(
@@ -95,6 +55,7 @@ fun HomeScreen(
     stats: UserStats,
     onStartOnline: (playerCount: Int) -> Unit,
     onNavigateFriends: () -> Unit,
+    onNavigateJoinRoom: () -> Unit = onNavigateFriends,
     onStartLocal: (playerCount: Int) -> Unit,
     onStartAi: (difficulty: String, playerCount: Int, color: String) -> Unit,
     onNavigateProfile: () -> Unit,
@@ -102,15 +63,13 @@ fun HomeScreen(
     onNavigateRules: () -> Unit,
     onNavigateFriendsList: () -> Unit,
     onNavigateLocker: () -> Unit,
+    onClaimDailyBonus: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showAiSetupDialog by remember { mutableStateOf(false) }
     var showLocalSetupDialog by remember { mutableStateOf(false) }
-    var showOnlineSetupDialog by remember { mutableStateOf(false) }
-
-    var userCoins by remember { mutableIntStateOf(25400) }
-    var userGems by remember { mutableIntStateOf(120) }
-    var dailyClaimed by remember { mutableStateOf(false) }
+    var showQuickOnlineSetupDialog by remember { mutableStateOf(false) }
+    var dailyClaimed by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -126,1556 +85,401 @@ fun HomeScreen(
             )
     ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
             item {
-                Spacer(modifier = Modifier.height(34.dp))
-                // 1. AAA Top Header with Gamer Persona, XP Bar & Currency Vaults
-                AAAGamingHeader(
+                Spacer(modifier = Modifier.height(28.dp))
+                HomeHeader(
                     profile = profile,
-                    stats = stats,
-                    coins = userCoins,
-                    gems = userGems,
-                    onProfileClick = onNavigateProfile,
-                    onSettingsClick = onNavigateSettings,
-                    onRulesClick = onNavigateRules
+                    onNavigateProfile = onNavigateProfile,
+                    onNavigateLocker = onNavigateLocker,
+                    onNavigateFriends = onNavigateFriendsList,
+                    onNavigateSettings = onNavigateSettings,
+                    onNavigateRules = onNavigateRules
                 )
             }
 
             item {
-                // 2. Featured Cinematic Hero Card — "PLAY ONLINE"
-                FeaturedCinematicHeroCard(
-                    onClick = { showOnlineSetupDialog = true }
+                Spacer(modifier = Modifier.height(16.dp))
+                PlayWithFriendsCard(
+                    onCreateRoom = onNavigateFriends,
+                    onJoinRoom = onNavigateJoinRoom
                 )
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(4.dp, 16.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(NeoLudoColors.AmberYellow)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "GAMEPLAY MODES",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.2.sp
-                        )
-                    }
+                Spacer(modifier = Modifier.height(24.dp))
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     Text(
-                        text = "MATCH TYPES",
-                        color = NeoLudoColors.AmberYellow,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "GAME MODES",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoLudoColors.ObsidianTextMuted,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        GameModeTile(
+                            title = "Vs Computer",
+                            subtitle = "Play with AI bots",
+                            icon = Icons.Default.SmartToy,
+                            accentColor = NeoLudoColors.EmeraldGreen,
+                            onClick = { showAiSetupDialog = true },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        GameModeTile(
+                            title = "Pass & Play",
+                            subtitle = "Local multiplayer",
+                            icon = Icons.Default.SportsEsports,
+                            accentColor = NeoLudoColors.AmberYellow,
+                            onClick = { showLocalSetupDialog = true },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    GameModeTile(
+                        title = "Quick Online Match",
+                        subtitle = "Instant multiplayer match with random players",
+                        icon = Icons.Default.Public,
+                        accentColor = NeoLudoColors.CobaltBlue,
+                        onClick = { showQuickOnlineSetupDialog = true },
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
 
             item {
-                // 3. Custom-Illustrated 2x2 Game Mode Grid (Friends Vault, Offline Arena, Cyber Bot AI, Skin Locker)
-                RichGameModes2x2Grid(
-                    onPlayWithFriends = onNavigateFriends,
-                    onPassAndPlay = { showLocalSetupDialog = true },
-                    onVsComputer = { showAiSetupDialog = true },
-                    onCosmeticsLocker = onNavigateLocker
-                )
-            }
-
-            item {
-                // 4. Daily Quests & Fortune Chest Widget
-                DailyQuestsAndFortuneCard(
-                    dailyClaimed = dailyClaimed,
-                    onClaimReward = {
-                        if (!dailyClaimed) {
-                            dailyClaimed = true
-                            userCoins += 500
-                        }
-                    }
-                )
-            }
-
-            item {
-                // 5. Career KPI & Trophy Showcase Card
-                CareerShowcaseCard(
-                    stats = stats,
-                    onFriendsClick = onNavigateFriendsList
-                )
-                Spacer(modifier = Modifier.height(84.dp))
-            }
-        }
-
-        // 6. Floating Glassmorphic Bottom Navigation Bar
-        FloatingGlassBottomNav(
-            currentRoute = "play",
-            onTabSelected = { route ->
-                when (route) {
-                    "play" -> Unit
-                    "locker" -> onNavigateLocker()
-                    "friends" -> onNavigateFriendsList()
-                    "rules" -> onNavigateRules()
-                    "settings" -> onNavigateSettings()
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp, start = 18.dp, end = 18.dp)
-        )
-
-        // Setup Dialogs
-        if (showAiSetupDialog) {
-            VsComputerSetupDialog(
-                onDismiss = { showAiSetupDialog = false },
-                onStartGame = { diff, count, color ->
-                    showAiSetupDialog = false
-                    onStartAi(diff.name, count, color.name)
-                }
-            )
-        }
-
-        if (showLocalSetupDialog) {
-            LocalMatchSetupDialog(
-                onDismiss = { showLocalSetupDialog = false },
-                onStartGame = { count ->
-                    showLocalSetupDialog = false
-                    onStartLocal(count)
-                }
-            )
-        }
-
-        if (showOnlineSetupDialog) {
-            OnlineMatchSetupDialog(
-                onDismiss = { showOnlineSetupDialog = false },
-                onQuickMatch = { count ->
-                    showOnlineSetupDialog = false
-                    onStartOnline(count)
-                },
-                onCreateCustomRoom = {
-                    showOnlineSetupDialog = false
-                    onNavigateFriends()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun AAAGamingHeader(
-    profile: UserProfile,
-    stats: UserStats,
-    coins: Int,
-    gems: Int,
-    onProfileClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onRulesClick: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Profile Persona Capsule
-            Surface(
-                shape = RoundedCornerShape(26.dp),
-                color = Color(0xFF111726),
-                border = BorderStroke(1.5.dp, Color(0xFF263550)),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(26.dp))
-                    .clickable(onClick = onProfileClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Avatar Frame with Level Badge
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(NeoLudoColors.CobaltBlue, NeoLudoColors.EmeraldGreen)
-                                    )
-                                )
-                                .border(2.dp, Color(0xFFFFD54F), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = profile.displayName.take(1).uppercase(),
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp
-                            )
-                        }
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFFFD54F),
-                            border = BorderStroke(1.dp, Color.Black),
-                            modifier = Modifier.size(16.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "24",
-                                    color = Color.Black,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column {
-                        Text(
-                            text = profile.displayName,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = profile.playerTitle,
-                                color = NeoLudoColors.AmberYellow,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "🔥 3 Streak",
-                                color = Color(0xFFFF7043),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Currency Trackers
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Gold Coins Pill
+                Spacer(modifier = Modifier.height(24.dp))
+                // Daily Reward Card
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFF261D05),
-                    border = BorderStroke(1.5.dp, Color(0xFFFFD54F))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "🪙", fontSize = 13.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "%,d".format(coins),
-                            color = Color(0xFFFFE082),
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                // Gems Pill
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFF0A223D),
-                    border = BorderStroke(1.5.dp, Color(0xFF00E5FF))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "💎", fontSize = 13.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "$gems",
-                            color = Color(0xFF80DEEA),
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeaturedCinematicHeroCard(
-    onClick: () -> Unit
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "hero_anim")
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "hero_pulse"
-    )
-
-    Surface(
-        shape = RoundedCornerShape(26.dp),
-        color = Color.Transparent,
-        border = BorderStroke(2.dp, Color(0xFF2979FF).copy(alpha = pulseGlow)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .clickable(onClick = onClick)
-    ) {
-        Box(
-            modifier = Modifier
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            Color(0xFF0E2C66),
-                            Color(0xFF0D1B36),
-                            Color(0xFF081122)
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(1000f, 600f)
-                    )
-                )
-                .padding(20.dp)
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF2979FF).copy(alpha = 0.3f),
-                        border = BorderStroke(1.dp, Color(0xFF2979FF))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD54F), modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "GLOBAL ARENA",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF0D3823),
-                        border = BorderStroke(1.dp, NeoLudoColors.EmeraldGreen.copy(alpha = 0.7f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(NeoLudoColors.EmeraldGreen)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "4,820 ONLINE",
-                                color = NeoLudoColors.EmeraldGreen,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Play Online",
-                            color = Color.White,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 24.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Instant 2 & 4 Player matchmaking • Global ranking",
-                            color = Color(0xFF90CAF9),
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // Custom Vector 3D Isometric Ludo Dice Graphic
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color(0xFF2979FF).copy(alpha = 0.5f), Color.Transparent),
-                                    radius = 120f
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Canvas(modifier = Modifier.size(56.dp)) {
-                            val w = size.width
-                            val h = size.height
-                            // Isometric 3D Die
-                            drawRoundRect(
-                                brush = Brush.linearGradient(
-                                    listOf(Color(0xFFE53935), Color(0xFFC62828)),
-                                    start = Offset(0f, 0f),
-                                    end = Offset(w, h)
-                                ),
-                                topLeft = Offset(4f, 4f),
-                                size = Size(w - 8f, h - 8f),
-                                cornerRadius = CornerRadius(16f, 16f)
-                            )
-                            drawRoundRect(
-                                color = Color(0xFFFFD54F),
-                                topLeft = Offset(4f, 4f),
-                                size = Size(w - 8f, h - 8f),
-                                cornerRadius = CornerRadius(16f, 16f),
-                                style = Stroke(2.2f)
-                            )
-                            // 5 pips
-                            val r = w * 0.08f
-                            drawCircle(Color.White, r, Offset(w * 0.3f, h * 0.3f))
-                            drawCircle(Color.White, r, Offset(w * 0.7f, h * 0.3f))
-                            drawCircle(Color.White, r, Offset(w * 0.5f, h * 0.5f))
-                            drawCircle(Color.White, r, Offset(w * 0.3f, h * 0.7f))
-                            drawCircle(Color.White, r, Offset(w * 0.7f, h * 0.7f))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // CTA Button
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF2979FF),
-                    border = BorderStroke(1.5.dp, Color(0xFF82B1FF)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = NeoLudoColors.ObsidianSurfaceCard,
+                    border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Bolt,
-                            contentDescription = null,
-                            tint = Color(0xFFFFD54F),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "PLAY ONLINE NOW",
-                            color = Color.White,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 14.sp,
-                            letterSpacing = 1.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RichGameModes2x2Grid(
-    onPlayWithFriends: () -> Unit,
-    onPassAndPlay: () -> Unit,
-    onVsComputer: () -> Unit,
-    onCosmeticsLocker: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        // Row 1: Friends Vault & Pass and Play Offline Arena
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // 1. Play with Friends (Custom Room Vault Art)
-            CustomModeCard(
-                title = "Friends Room",
-                subtitle = "Private 6-Code Lobby",
-                badge = "CUSTOM",
-                accentColor = NeoLudoColors.EmeraldGreen,
-                gradientColors = listOf(Color(0xFF0F3824), Color(0xFF081C12)),
-                artType = ModeArtType.FRIENDS_VAULT,
-                onClick = onPlayWithFriends,
-                modifier = Modifier.weight(1f)
-            )
-
-            // 2. Pass & Play (Local Offline Arena Art)
-            CustomModeCard(
-                title = "Pass & Play",
-                subtitle = "2–4 Players • Offline",
-                badge = "NO WIFI",
-                accentColor = NeoLudoColors.AmberYellow,
-                gradientColors = listOf(Color(0xFF382E0A), Color(0xFF1C1705)),
-                artType = ModeArtType.OFFLINE_BOARD,
-                onClick = onPassAndPlay,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        // Row 2: Vs Computer AI & Cosmetics Locker
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // 3. Vs Computer (Cyber AI Mastermind Art)
-            CustomModeCard(
-                title = "Vs Computer",
-                subtitle = "3 Smart AI Tiers",
-                badge = "SOLO BOT",
-                accentColor = NeoLudoColors.RubyRed,
-                gradientColors = listOf(Color(0xFF3D1120), Color(0xFF1F0810)),
-                artType = ModeArtType.CYBER_ROBOT,
-                onClick = onVsComputer,
-                modifier = Modifier.weight(1f)
-            )
-
-            // 4. Cosmetics Locker (Skin Vault Art)
-            CustomModeCard(
-                title = "Locker Vault",
-                subtitle = "5 Themes • 5 Dice",
-                badge = "SKINS",
-                accentColor = Color(0xFFFF007F),
-                gradientColors = listOf(Color(0xFF380D2E), Color(0xFF1C0617)),
-                artType = ModeArtType.SKIN_VAULT,
-                onClick = onCosmeticsLocker,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-private enum class ModeArtType {
-    FRIENDS_VAULT,
-    OFFLINE_BOARD,
-    CYBER_ROBOT,
-    SKIN_VAULT
-}
-
-@Composable
-private fun CustomModeCard(
-    title: String,
-    subtitle: String,
-    badge: String,
-    accentColor: Color,
-    gradientColors: List<Color>,
-    artType: ModeArtType,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Nested Double-Bezel Hardware Card Architecture
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = Color.Transparent,
-        border = BorderStroke(1.8.dp, accentColor.copy(alpha = 0.5f)),
-        modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick)
-    ) {
-        Box(
-            modifier = Modifier
-                .background(Brush.verticalGradient(gradientColors))
-                .padding(14.dp)
-        ) {
-            Column {
-                // Top Row: Custom Canvas Mode Art & Badge
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    // Custom Canvas Vector Art
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(accentColor.copy(alpha = 0.2f))
-                            .border(1.2.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Canvas(modifier = Modifier.size(38.dp)) {
-                            when (artType) {
-                                ModeArtType.FRIENDS_VAULT -> drawFriendsVaultArt(size.width, size.height, accentColor)
-                                ModeArtType.OFFLINE_BOARD -> drawOfflineBoardArt(size.width, size.height, accentColor)
-                                ModeArtType.CYBER_ROBOT -> drawCyberRobotArt(size.width, size.height, accentColor)
-                                ModeArtType.SKIN_VAULT -> drawSkinVaultArt(size.width, size.height, accentColor)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = NeoLudoColors.AmberYellow.copy(alpha = 0.2f),
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.CardGiftcard,
+                                        contentDescription = null,
+                                        tint = NeoLudoColors.AmberYellow,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Daily Login Reward",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (dailyClaimed) "Claimed (+200 Coins)" else "+200 Coins + 10 Gems",
+                                    fontSize = 12.sp,
+                                    color = if (dailyClaimed) NeoLudoColors.EmeraldGreen else NeoLudoColors.AmberYellow
+                                )
                             }
                         }
-                    }
 
-                    // Badge
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = accentColor.copy(alpha = 0.25f),
-                        border = BorderStroke(0.8.dp, accentColor)
-                    ) {
-                        Text(
-                            text = badge,
-                            color = accentColor,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
+                        if (!dailyClaimed) {
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        dailyClaimed = true
+                                        onClaimDailyBonus()
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                color = NeoLudoColors.AmberYellow
+                            ) {
+                                Text(
+                                    text = "Claim",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Claimed",
+                                tint = NeoLudoColors.EmeraldGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = title,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                CareerStatsSummaryCard(
+                    stats = stats,
+                    onNavigateStats = onNavigateProfile
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    color = NeoLudoColors.ObsidianTextSecondary,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Action Pill Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "PLAY",
-                        color = accentColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }
-}
 
-// 1. Friends Room Art: Duo Map Pins with Golden Key & Sparkling Radiance
-private fun DrawScope.drawFriendsVaultArt(w: Float, h: Float, accentColor: Color) {
-    // Left Red Pin
-    drawCircle(Color(0xFFE53935), w * 0.22f, Offset(w * 0.35f, h * 0.42f))
-    drawCircle(Color.White, w * 0.1f, Offset(w * 0.35f, h * 0.42f))
-    // Right Green Pin
-    drawCircle(Color(0xFF43A047), w * 0.22f, Offset(w * 0.65f, h * 0.42f))
-    drawCircle(Color.White, w * 0.1f, Offset(w * 0.65f, h * 0.42f))
-    // Center Golden Key
-    drawCircle(Color(0xFFFFD54F), w * 0.16f, Offset(w * 0.5f, h * 0.72f), style = Stroke(2.5f))
-    drawLine(Color(0xFFFFD54F), Offset(w * 0.5f, h * 0.72f), Offset(w * 0.8f, h * 0.72f), strokeWidth = 2.5f)
-}
+    // AI Setup Dialog
+    if (showAiSetupDialog) {
+        var selectedDifficulty by remember { mutableStateOf(Difficulty.NORMAL) }
+        var selectedCount by remember { mutableIntStateOf(4) }
+        var selectedColor by remember { mutableStateOf(PlayerColor.RED) }
 
-// 2. Offline Board Art: 4-Corner Miniature Ludo Board with Tokens
-private fun DrawScope.drawOfflineBoardArt(w: Float, h: Float, accentColor: Color) {
-    // Mini Wood Board
-    drawRoundRect(
-        color = Color(0xFF5D4037),
-        topLeft = Offset(w * 0.1f, h * 0.1f),
-        size = Size(w * 0.8f, h * 0.8f),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
-    drawRoundRect(
-        color = Color(0xFFFFF9C4),
-        topLeft = Offset(w * 0.18f, h * 0.18f),
-        size = Size(w * 0.64f, h * 0.64f),
-        cornerRadius = CornerRadius(4f, 4f)
-    )
-    // 4 Corner Pawns
-    drawCircle(Color(0xFFE53935), w * 0.09f, Offset(w * 0.3f, h * 0.3f))
-    drawCircle(Color(0xFF43A047), w * 0.09f, Offset(w * 0.7f, h * 0.3f))
-    drawCircle(Color(0xFF00A0E9), w * 0.09f, Offset(w * 0.3f, h * 0.7f))
-    drawCircle(Color(0xFFFDD835), w * 0.09f, Offset(w * 0.7f, h * 0.7f))
-}
-
-// 3. Cyber Robot AI Art: Futuristic Robot Visor & Mechanical Pawn
-private fun DrawScope.drawCyberRobotArt(w: Float, h: Float, accentColor: Color) {
-    // Robot head
-    drawRoundRect(
-        color = Color(0xFFE53935),
-        topLeft = Offset(w * 0.2f, h * 0.25f),
-        size = Size(w * 0.6f, h * 0.5f),
-        cornerRadius = CornerRadius(8f, 8f)
-    )
-    // Cyan Visor
-    drawRoundRect(
-        color = Color(0xFF00F0FF),
-        topLeft = Offset(w * 0.28f, h * 0.38f),
-        size = Size(w * 0.44f, h * 0.16f),
-        cornerRadius = CornerRadius(4f, 4f)
-    )
-    // Antenna
-    drawLine(Color.White, Offset(w * 0.5f, h * 0.25f), Offset(w * 0.5f, h * 0.1f), strokeWidth = 2.5f)
-    drawCircle(Color(0xFFFFD54F), w * 0.08f, Offset(w * 0.5f, h * 0.1f))
-}
-
-// 4. Skin Vault Art: Glowing Crystal Gem & Floating Die
-private fun DrawScope.drawSkinVaultArt(w: Float, h: Float, accentColor: Color) {
-    // Faceted Crystal Gem Path
-    val path = Path().apply {
-        moveTo(w * 0.5f, h * 0.15f)
-        lineTo(w * 0.82f, h * 0.42f)
-        lineTo(w * 0.5f, h * 0.85f)
-        lineTo(w * 0.18f, h * 0.42f)
-        close()
-    }
-    drawPath(path, Brush.radialGradient(listOf(Color(0xFFFF007F), Color(0xFF7B1FA2)), center = Offset(w * 0.5f, h * 0.5f)))
-    drawPath(path, Color.White, style = Stroke(1.8f))
-    drawCircle(Color.White, w * 0.08f, Offset(w * 0.5f, h * 0.45f))
-}
-
-@Composable
-private fun DailyQuestsAndFortuneCard(
-    dailyClaimed: Boolean,
-    onClaimReward: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF101626),
-        border = BorderStroke(1.2.dp, Color(0xFF24324E)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CardGiftcard,
-                        contentDescription = null,
-                        tint = NeoLudoColors.AmberYellow,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "DAILY QUESTS & CHEST",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Text(
-                    text = "Refreshes 14h",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 10.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Quest 1
-            QuestRowItem(
-                title = "Roll a 6 in Match",
-                progressText = "3 / 5",
-                progressFraction = 0.6f,
-                rewardText = "🪙 +250"
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Quest 2
-            QuestRowItem(
-                title = "Capture 2 Opponent Pawns",
-                progressText = "1 / 2",
-                progressFraction = 0.5f,
-                rewardText = "💎 +10"
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Daily Free Reward Button
+        Dialog(onDismissRequest = { showAiSetupDialog = false }) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (dailyClaimed) Color(0xFF1C2438) else Color(0xFF0D3823),
-                border = BorderStroke(1.2.dp, if (dailyClaimed) Color(0xFF2E3D5C) else NeoLudoColors.EmeraldGreen),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable(enabled = !dailyClaimed, onClick = onClaimReward)
+                shape = RoundedCornerShape(24.dp),
+                color = NeoLudoColors.ObsidianSurfaceCard,
+                border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 11.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (dailyClaimed) "✅ DAILY CHEST CLAIMED" else "🎁 CLAIM FREE 500 COINS",
-                        color = if (dailyClaimed) NeoLudoColors.ObsidianTextSecondary else NeoLudoColors.EmeraldGreen,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuestRowItem(
-    title: String,
-    progressText: String,
-    progressFraction: Float,
-    rewardText: String
-) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                color = NeoLudoColors.ObsidianTextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = progressText,
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFF1B2436)
-                ) {
-                    Text(
-                        text = rewardText,
-                        color = NeoLudoColors.AmberYellow,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        LinearProgressIndicator(
-            progress = { progressFraction },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp)),
-            color = NeoLudoColors.CobaltBlue,
-            trackColor = Color(0xFF1C273D)
-        )
-    }
-}
-
-@Composable
-private fun CareerShowcaseCard(
-    stats: UserStats,
-    onFriendsClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF101626),
-        border = BorderStroke(1.2.dp, Color(0xFF24324E)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.EmojiEvents,
-                        contentDescription = null,
-                        tint = Color(0xFFFFD54F),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "CAREER SHOWCASE",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = NeoLudoColors.EmeraldGreen.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, NeoLudoColors.EmeraldGreen.copy(alpha = 0.5f))
-                ) {
-                    Text(
-                        text = "${stats.winRate.toInt()}% WIN RATE",
-                        color = NeoLudoColors.EmeraldGreen,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 4 KPI Columns
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                StatColumn(label = "Matches", value = stats.totalMatches.toString(), accent = Color.White)
-                StatColumn(label = "Victories", value = stats.totalWins.toString(), accent = NeoLudoColors.EmeraldGreen)
-                StatColumn(label = "Captures", value = stats.totalCaptures.toString(), accent = NeoLudoColors.RubyRed)
-                StatColumn(label = "Sixes", value = stats.totalSixes.toString(), accent = NeoLudoColors.AmberYellow)
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Friends Quick Action Launcher
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF172034),
-                border = BorderStroke(1.dp, Color(0xFF283A5A)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = onFriendsClick)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(NeoLudoColors.EmeraldGreen)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Friends Hub & Social Rooms",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Text(
-                        text = "VIEW >",
-                        color = NeoLudoColors.CobaltBlue,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatColumn(label: String, value: String, accent: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            color = accent,
-            fontWeight = FontWeight.Black,
-            fontSize = 18.sp
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = label,
-            color = NeoLudoColors.ObsidianTextSecondary,
-            fontSize = 11.sp
-        )
-    }
-}
-
-@Composable
-private fun FloatingGlassBottomNav(
-    currentRoute: String,
-    onTabSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = Color(0xE8101728),
-        border = BorderStroke(1.5.dp, Color(0xFF283856)),
-        shadowElevation = 14.dp,
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GlassNavItem(
-                label = "Play",
-                icon = Icons.Default.SportsEsports,
-                isSelected = currentRoute == "play",
-                accentColor = Color(0xFFFFD54F),
-                onClick = { onTabSelected("play") }
-            )
-
-            GlassNavItem(
-                label = "Locker",
-                icon = Icons.Default.Palette,
-                isSelected = currentRoute == "locker",
-                accentColor = Color(0xFFFF007F),
-                onClick = { onTabSelected("locker") }
-            )
-
-            GlassNavItem(
-                label = "Friends",
-                icon = Icons.Default.Group,
-                isSelected = currentRoute == "friends",
-                accentColor = NeoLudoColors.EmeraldGreen,
-                onClick = { onTabSelected("friends") }
-            )
-
-            GlassNavItem(
-                label = "Rules",
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                isSelected = currentRoute == "rules",
-                accentColor = Color(0xFF00E5FF),
-                onClick = { onTabSelected("rules") }
-            )
-
-            GlassNavItem(
-                label = "Settings",
-                icon = Icons.Default.Settings,
-                isSelected = currentRoute == "settings",
-                accentColor = Color.White,
-                onClick = { onTabSelected("settings") }
-            )
-        }
-    }
-}
-
-@Composable
-private fun GlassNavItem(
-    label: String,
-    icon: ImageVector,
-    isSelected: Boolean,
-    accentColor: Color,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (isSelected) accentColor.copy(alpha = 0.18f) else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isSelected) accentColor else NeoLudoColors.ObsidianTextMuted,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = label,
-                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextMuted,
-                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                fontSize = 10.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun VsComputerSetupDialog(
-    onDismiss: () -> Unit,
-    onStartGame: (difficulty: Difficulty, playerCount: Int, color: PlayerColor) -> Unit
-) {
-    var selectedDifficulty by remember { mutableStateOf(Difficulty.NORMAL) }
-    var selectedPlayerCount by remember { mutableIntStateOf(4) }
-    var selectedColor by remember { mutableStateOf(PlayerColor.RED) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF121827),
-            border = BorderStroke(1.5.dp, NeoLudoColors.RubyRed.copy(alpha = 0.6f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Vs Computer Match",
-                        color = Color.White,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
-                    }
-                }
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 1: AI Difficulty
-                Text(
-                    text = "AI DIFFICULTY",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val difficulties = listOf(
-                        Triple(Difficulty.EASY, "Easy", NeoLudoColors.EmeraldGreen),
-                        Triple(Difficulty.NORMAL, "Normal", NeoLudoColors.AmberYellow),
-                        Triple(Difficulty.HARD, "Hard", NeoLudoColors.RubyRed)
-                    )
-
-                    difficulties.forEach { (diff, label, color) ->
-                        val isSelected = selectedDifficulty == diff
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) color.copy(alpha = 0.2f) else Color(0xFF1B2338))
-                                .border(
-                                    1.5.dp,
-                                    if (isSelected) color else Color(0xFF2B3A5A),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { selectedDifficulty = diff }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (isSelected) color else Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-                val diffDescription = when (selectedDifficulty) {
-                    Difficulty.EASY -> "Relaxed AI • Casual and fun for quick games"
-                    Difficulty.NORMAL -> "Tactical AI • Balanced captures and safe-zone focus"
-                    Difficulty.HARD -> "Master AI • Deep danger heatmaps & high threat"
-                }
-                Text(
-                    text = diffDescription,
-                    color = NeoLudoColors.ObsidianTextSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Section 2: Player Count
-                Text(
-                    text = "NUMBER OF PLAYERS",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2, 3, 4).forEach { count ->
-                        val isSelected = selectedPlayerCount == count
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) NeoLudoColors.CobaltBlue.copy(alpha = 0.25f) else Color(0xFF1B2338))
-                                .border(
-                                    1.5.dp,
-                                    if (isSelected) NeoLudoColors.CobaltBlue else Color(0xFF2B3A5A),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { selectedPlayerCount = count }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$count Players",
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Section 3: Player Color
-                Text(
-                    text = "YOUR TOKEN COLOR",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    val colors = listOf(
-                        PlayerColor.RED to NeoLudoColors.RubyRed,
-                        PlayerColor.GREEN to NeoLudoColors.EmeraldGreen,
-                        PlayerColor.YELLOW to NeoLudoColors.AmberYellow,
-                        PlayerColor.BLUE to NeoLudoColors.CobaltBlue
-                    )
-
-                    colors.forEach { (colorEnum, composeColor) ->
-                        val isSelected = selectedColor == colorEnum
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(composeColor.copy(alpha = if (isSelected) 0.35f else 0.15f))
-                                .border(
-                                    if (isSelected) 2.dp else 1.dp,
-                                    if (isSelected) composeColor else composeColor.copy(alpha = 0.4f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { selectedColor = colorEnum },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
+                    Text("DIFFICULTY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeoLudoColors.ObsidianTextMuted)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(Difficulty.EASY, Difficulty.NORMAL, Difficulty.HARD).forEach { diff ->
+                            val isSelected = selectedDifficulty == diff
+                            Surface(
                                 modifier = Modifier
-                                    .size(18.dp)
-                                    .clip(CircleShape)
-                                    .background(composeColor)
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { selectedDifficulty = diff },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) NeoLudoColors.EmeraldGreen else Color(0xFF1E293B),
+                                border = BorderStroke(1.dp, if (isSelected) NeoLudoColors.EmeraldGreen else Color.Transparent)
                             ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = if (colorEnum == PlayerColor.YELLOW) Color.Black else Color.White,
-                                        modifier = Modifier.size(18.dp)
+                                Box(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = diff.name.take(4),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.Black else Color.White
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                NeoLudoButton(
-                    text = "START MATCH",
-                    onClick = { onStartGame(selectedDifficulty, selectedPlayerCount, selectedColor) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalMatchSetupDialog(
-    onDismiss: () -> Unit,
-    onStartGame: (playerCount: Int) -> Unit
-) {
-    var selectedPlayerCount by remember { mutableIntStateOf(4) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF121827),
-            border = BorderStroke(1.5.dp, NeoLudoColors.AmberYellow.copy(alpha = 0.6f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Pass & Play (Local)",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Play together offline on one device with zero latency.",
-                    color = NeoLudoColors.ObsidianTextSecondary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "NUMBER OF PLAYERS",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2, 3, 4).forEach { count ->
-                        val isSelected = selectedPlayerCount == count
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (isSelected) NeoLudoColors.AmberYellow.copy(alpha = 0.2f) else Color(0xFF1B2338))
-                                .border(
-                                    1.5.dp,
-                                    if (isSelected) NeoLudoColors.AmberYellow else Color(0xFF2B3A5A),
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .clickable { selectedPlayerCount = count }
-                                .padding(vertical = 14.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "$count",
-                                    color = if (isSelected) NeoLudoColors.AmberYellow else Color.White,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 18.sp
-                                )
-                                Text(
-                                    text = "Players",
-                                    color = NeoLudoColors.ObsidianTextSecondary,
-                                    fontSize = 11.sp
-                                )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("PLAYERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeoLudoColors.ObsidianTextMuted)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(2, 3, 4).forEach { count ->
+                            val isSelected = selectedCount == count
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { selectedCount = count },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) NeoLudoColors.CobaltBlue else Color(0xFF1E293B)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "$count Players",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    NeoLudoButton(
+                        text = "Start AI Game",
+                        accentColor = NeoLudoColors.EmeraldGreen,
+                        onClick = {
+                            showAiSetupDialog = false
+                            onStartAi(selectedDifficulty.name, selectedCount, selectedColor.name)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                NeoLudoButton(
-                    text = "START LOCAL MATCH",
-                    onClick = { onStartGame(selectedPlayerCount) },
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
-}
 
-@Composable
-private fun OnlineMatchSetupDialog(
-    onDismiss: () -> Unit,
-    onQuickMatch: (playerCount: Int) -> Unit,
-    onCreateCustomRoom: () -> Unit
-) {
-    var selectedPlayerCount by remember { mutableIntStateOf(4) }
+    // Local Pass & Play Setup Dialog
+    if (showLocalSetupDialog) {
+        var selectedCount by remember { mutableIntStateOf(4) }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF121827),
-            border = BorderStroke(1.5.dp, NeoLudoColors.CobaltBlue.copy(alpha = 0.6f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        Dialog(onDismissRequest = { showLocalSetupDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = NeoLudoColors.ObsidianSurfaceCard,
+                border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "Play Online",
-                        color = Color.White,
+                        text = "Pass & Play Setup",
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
-                    }
-                }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Play together on this single phone offline.",
+                        fontSize = 12.sp,
+                        color = NeoLudoColors.ObsidianTextMuted
+                    )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option 1: Quick Matchmaking
-                Text(
-                    text = "QUICK MATCHMAKING",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2, 4).forEach { count ->
-                        val isSelected = selectedPlayerCount == count
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) NeoLudoColors.CobaltBlue.copy(alpha = 0.25f) else Color(0xFF1B2338))
-                                .border(
-                                    1.5.dp,
-                                    if (isSelected) NeoLudoColors.CobaltBlue else Color(0xFF2B3A5A),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { selectedPlayerCount = count }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$count Players",
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                NeoLudoButton(
-                    text = "FIND QUICK MATCH",
-                    onClick = { onQuickMatch(selectedPlayerCount) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Option 2: Friends Custom Room
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF1B2338),
-                    border = BorderStroke(1.dp, Color(0xFF2B3A5A)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(onClick = onCreateCustomRoom)
-                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("PLAYERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeoLudoColors.ObsidianTextMuted)
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = "Create / Join Friends Room",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "Private 6-character room codes",
-                                color = NeoLudoColors.ObsidianTextSecondary,
-                                fontSize = 11.sp
-                            )
+                        listOf(2, 3, 4).forEach { count ->
+                            val isSelected = selectedCount == count
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { selectedCount = count },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) NeoLudoColors.AmberYellow else Color(0xFF1E293B)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "$count Players",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.Black else Color.White
+                                    )
+                                }
+                            }
                         }
-                        Icon(Icons.Default.Group, contentDescription = null, tint = NeoLudoColors.EmeraldGreen)
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    NeoLudoButton(
+                        text = "Start Local Game",
+                        accentColor = NeoLudoColors.AmberYellow,
+                        onClick = {
+                            showLocalSetupDialog = false
+                            onStartLocal(selectedCount)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    // Quick Online Dialog
+    if (showQuickOnlineSetupDialog) {
+        var selectedCount by remember { mutableIntStateOf(4) }
+
+        Dialog(onDismissRequest = { showQuickOnlineSetupDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = NeoLudoColors.ObsidianSurfaceCard,
+                border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Quick Online Match",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text("SELECT PLAYERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeoLudoColors.ObsidianTextMuted)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(2, 3, 4).forEach { count ->
+                            val isSelected = selectedCount == count
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { selectedCount = count },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) NeoLudoColors.CobaltBlue else Color(0xFF1E293B)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "$count Players",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    NeoLudoButton(
+                        text = "Find Match",
+                        accentColor = NeoLudoColors.CobaltBlue,
+                        onClick = {
+                            showQuickOnlineSetupDialog = false
+                            onStartOnline(selectedCount)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }

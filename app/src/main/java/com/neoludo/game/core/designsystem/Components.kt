@@ -1,27 +1,21 @@
 package com.neoludo.game.core.designsystem
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
@@ -33,12 +27,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,38 +41,45 @@ import androidx.compose.ui.unit.sp
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.PlayerState
 
+/**
+ * Club Brutalist primary button — the single button system.
+ * Solid fill + 2px ink border + 14dp radius. Press = scale 0.96 + 2px translate.
+ * Zero gradients. 52dp height (>= 48dp touch target).
+ */
 @Composable
 fun NeoLudoButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    accentColor: Color = NeoLudoColors.CobaltBlue,
+    accentColor: Color = NeoLudoColors.BrutalistBlue,
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
-    val brush = if (enabled) {
-        Brush.horizontalGradient(
-            listOf(accentColor, accentColor.copy(alpha = 0.8f))
-        )
-    } else {
-        Brush.horizontalGradient(
-            listOf(Color.DarkGray, Color.Gray)
-        )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val contentColor = when (accentColor) {
+        NeoLudoColors.AmberYellow, NeoLudoColors.BrutalistAmber -> NeoLudoColors.BrutalistInk
+        else -> Color.White
     }
 
     Surface(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, if (enabled) accentColor.copy(alpha = 0.5f) else Color.Transparent)
+            .scale(if (pressed && enabled) 0.96f else 1f)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            ),
+        shape = MaterialTheme.shapes.medium,
+        color = if (enabled) accentColor else NeoLudoColors.BrutalistDisabledFill,
+        border = BorderStroke(2.dp, NeoLudoColors.BrutalistLine)
     ) {
         Box(
-            modifier = Modifier
-                .background(brush)
-                .padding(horizontal = 24.dp),
+            modifier = Modifier.padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center
         ) {
             Row(
@@ -90,29 +92,45 @@ fun NeoLudoButton(
                 }
                 Text(
                     text = text,
-                    color = if (enabled) Color.White else Color.LightGray,
+                    color = if (enabled) contentColor else NeoLudoColors.BrutalistDisabledText,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
     }
 }
 
+/** Sentence-case section label — replaces ALL-CAPS muted headers. Max 1 per 3 sections. */
+@Composable
+fun NeoLudoSectionLabel(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.labelMedium,
+        color = NeoLudoColors.BrutalistTextMutedOnInk
+    )
+}
+
 @Composable
 fun NeoLudoCard(
     modifier: Modifier = Modifier,
-    borderColor: Color = NeoLudoColors.ObsidianBorder,
-    backgroundColor: Color = NeoLudoColors.ObsidianSurfaceCard,
+    borderColor: Color = NeoLudoColors.BrutalistLine,
+    backgroundColor: Color = NeoLudoColors.BrutalistInkSoft,
     content: @Composable () -> Unit
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
-        border = BorderStroke(1.5.dp, borderColor)
+        border = BorderStroke(2.dp, borderColor)
     ) {
-        Box(modifier = Modifier.padding(16.dp)) {
+        Box(modifier = Modifier.padding(NeoLudoSpacing.lg)) {
             content()
         }
     }
@@ -123,34 +141,27 @@ fun PlayerPlate(
     player: PlayerState,
     isActiveTurn: Boolean,
     turnProgress: Float = 1.0f,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    motionEnabled: Boolean = false
 ) {
-    val playerColor = NeoLudoColors.getPlayerColor(player.color)
-    val infiniteTransition = rememberInfiniteTransition(label = "halo")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
+    // Brutalist: static 2px ink/player border. No infinite halo pulse by default —
+    // pass motionEnabled=true only when reduced-motion is off AND turn needs emphasis.
+    // (Previous infiniteRepeatable pulse ignored prefers-reduced-motion.)
+    val playerColor = NeoLudoColors.getBrutalistPlayerColor(player.color)
 
     val borderModifier = if (isActiveTurn) {
-        Modifier
-            .scale(pulseScale)
-            .border(2.dp, playerColor, RoundedCornerShape(16.dp))
+        Modifier.border(2.dp, playerColor, MaterialTheme.shapes.medium)
     } else {
-        Modifier.border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(16.dp))
+        Modifier.border(2.dp, NeoLudoColors.BrutalistLine, MaterialTheme.shapes.medium)
     }
 
     Surface(
         modifier = modifier
             .then(borderModifier)
-            .clip(RoundedCornerShape(16.dp)),
-        color = if (isActiveTurn) NeoLudoColors.getPlayerContainer(player.color) else NeoLudoColors.ObsidianSurfaceCard,
-        shape = RoundedCornerShape(16.dp)
+            .clip(MaterialTheme.shapes.medium),
+        color = if (isActiveTurn) NeoLudoColors.BrutalistInkSoft else NeoLudoColors.BrutalistInk,
+        shape = MaterialTheme.shapes.medium,
+        border = null
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -189,7 +200,7 @@ fun PlayerPlate(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = player.name,
-                        color = if (isActiveTurn) Color.White else NeoLudoColors.ObsidianTextPrimary,
+                        color = NeoLudoColors.BrutalistTextOnInk,
                         fontWeight = if (isActiveTurn) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                         maxLines = 1,
@@ -200,12 +211,12 @@ fun PlayerPlate(
                         Icon(
                             imageVector = Icons.Default.Star,
                             contentDescription = "Rank",
-                            tint = NeoLudoColors.AmberYellow,
+                            tint = NeoLudoColors.BrutalistAmber,
                             modifier = Modifier.size(12.dp)
                         )
                         Text(
                             text = "#${player.rank}",
-                            color = NeoLudoColors.AmberYellow,
+                            color = NeoLudoColors.BrutalistAmber,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )

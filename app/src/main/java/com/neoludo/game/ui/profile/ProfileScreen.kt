@@ -455,11 +455,12 @@ fun ProfileScreen(
 
             NeoLudoButton(
                 text = "Save Changes",
-                accentColor = NeoLudoColors.CobaltBlue,
+                accentColor = NeoLudoColors.BrutalistBlue,
+                enabled = displayName.trim().isNotBlank(),
                 onClick = {
                     onSaveProfile(
                         profile.copy(
-                            displayName = displayName,
+                            displayName = displayName.trim().take(16),
                             avatarId = selectedAvatarId,
                             playerTitle = selectedTitle
                         )
@@ -468,6 +469,15 @@ fun ProfileScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (displayName.trim().isBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Display name can't be empty.",
+                    color = NeoLudoColors.BrutalistRed,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
             Spacer(modifier = Modifier.height(36.dp))
         }

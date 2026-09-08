@@ -1,5 +1,6 @@
 package com.neoludo.game.ui.room
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -32,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,11 +46,13 @@ import androidx.compose.ui.unit.sp
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.engine.model.LudoRuleSet
 import com.neoludo.game.engine.model.PlayerColor
+import kotlinx.coroutines.launch
 
 @Composable
 fun CreateRoomScreen(
-    onRoomCreated: (roomId: String, playerCount: Int, color: PlayerColor) -> Unit,
+    onCreateRoom: suspend (playerCount: Int, fillBots: Boolean, rules: LudoRuleSet, color: PlayerColor) -> Result<String>,
     onNavigateJoin: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -57,6 +62,11 @@ fun CreateRoomScreen(
     var timerSeconds by remember { mutableIntStateOf(30) }
     var penalty3xSix by remember { mutableStateOf(true) }
     var autoMoveSingle by remember { mutableStateOf(true) }
+    var fillBots by remember { mutableStateOf(false) }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
@@ -101,6 +111,24 @@ fun CreateRoomScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            if (errorMessage != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage ?: "",
+                        color = Color(0xFFFCA5A5),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             // Player Count
             Text(
                 text = "PLAYER COUNT",
@@ -121,19 +149,16 @@ fun CreateRoomScreen(
                             .weight(1f)
                             .height(50.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .clickable { playerCount = count }
-                            .border(
-                                1.5.dp,
-                                if (isSelected) NeoLudoColors.EmeraldGreen else NeoLudoColors.ObsidianBorder,
-                                RoundedCornerShape(14.dp)
-                            ),
-                        color = if (isSelected) NeoLudoColors.EmeraldGreenContainer else NeoLudoColors.ObsidianSurfaceCard
+                            .clickable { playerCount = count },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianSurfaceCard,
+                        border = BorderStroke(1.dp, if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianBorder)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 text = "$count Players",
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
                         }
@@ -141,11 +166,11 @@ fun CreateRoomScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Color Preference
+            // Preferred Color
             Text(
-                text = "YOUR COLOR",
+                text = "YOUR TOKEN COLOR",
                 color = NeoLudoColors.ObsidianTextMuted,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -154,31 +179,32 @@ fun CreateRoomScreen(
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                PlayerColor.entries.forEach { color ->
+                listOf(
+                    PlayerColor.RED to NeoLudoColors.RubyRed,
+                    PlayerColor.GREEN to NeoLudoColors.EmeraldGreen,
+                    PlayerColor.YELLOW to NeoLudoColors.AmberYellow,
+                    PlayerColor.BLUE to NeoLudoColors.CobaltBlue
+                ).forEach { (color, displayColor) ->
                     val isSelected = selectedColor == color
-                    val pColor = NeoLudoColors.getPlayerColor(color)
                     Surface(
                         modifier = Modifier
                             .weight(1f)
-                            .height(56.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { selectedColor = color }
-                            .border(
-                                2.dp,
-                                if (isSelected) pColor else Color.Transparent,
-                                RoundedCornerShape(14.dp)
-                            ),
-                        color = NeoLudoColors.getPlayerContainer(color)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { selectedColor = color },
+                        shape = RoundedCornerShape(12.dp),
+                        color = displayColor.copy(alpha = if (isSelected) 0.9f else 0.25f),
+                        border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
+                                    contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -186,79 +212,106 @@ fun CreateRoomScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Rule Settings
-            Text(
-                text = "RULE PREFERENCES",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
+            // Rules Card
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column {
+                    Text(
+                        text = "MATCH RULES",
+                        color = NeoLudoColors.ObsidianTextMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Turn Timer
+                    Text("Turn Timer", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column {
-                            Text(text = "Turn Timer", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(text = "$timerSeconds seconds per turn", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(15, 30, 45).forEach { sec ->
-                                val isSelected = timerSeconds == sec
+                        listOf(15, 30, 45).forEach { sec ->
+                            val isSelected = timerSeconds == sec
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { timerSeconds = sec },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) NeoLudoColors.EmeraldGreen else Color(0xFF1E293B)
+                            ) {
                                 Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianSurface)
-                                        .clickable { timerSeconds = sec }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "${sec}s",
-                                        color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
                                     )
                                 }
                             }
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 3x Six Penalty Switch
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(text = "3x Six Penalty", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(text = "Forfeit turn on 3 consecutive sixes", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("3x Consecutive Sixes Penalty", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Turn forfeits on 3 sixes in a row", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
                         }
                         Switch(
                             checked = penalty3xSix,
                             onCheckedChange = { penalty3xSix = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.CobaltBlue)
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Auto-Move Single Piece Switch
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(text = "Auto-Move Single Piece", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(text = "Fast-forward when only 1 legal move", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-Move Single Piece", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Auto-hop when only 1 move is legal", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
                         }
                         Switch(
                             checked = autoMoveSingle,
                             onCheckedChange = { autoMoveSingle = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.CobaltBlue)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Fill with bots
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Fill Empty Seats with Bots", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Fill unfilled seats with AI when match starts", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = fillBots,
+                            onCheckedChange = { fillBots = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.EmeraldGreen)
                         )
                     }
                 }
@@ -266,29 +319,52 @@ fun CreateRoomScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            NeoLudoButton(
-                text = "Generate Room Code",
-                accentColor = NeoLudoColors.EmeraldGreen,
-                onClick = {
-                    val code = "NL-" + (1000..9999).random()
-                    onRoomCreated(code, playerCount, selectedColor)
-                },
-            )
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = NeoLudoColors.CobaltBlue)
+                }
+            } else {
+                NeoLudoButton(
+                    text = "Create Room",
+                    accentColor = NeoLudoColors.CobaltBlue,
+                    onClick = {
+                        isLoading = true
+                        errorMessage = null
+                        scope.launch {
+                            val rules = LudoRuleSet(
+                                maxPlayers = playerCount,
+                                autoMoveSinglePiece = autoMoveSingle,
+                                penalty3xSix = penalty3xSix,
+                                turnTimerSeconds = timerSeconds
+                            )
+                            val result = onCreateRoom(playerCount, fillBots, rules, selectedColor)
+                            isLoading = false
+                            result.onFailure {
+                                errorMessage = it.message ?: "Failed to create room"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onNavigateJoin)
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "Have a code? Join Existing Room →",
+                    text = "Have a room code? ",
+                    color = NeoLudoColors.ObsidianTextMuted,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "Join Room",
                     color = NeoLudoColors.CobaltBlue,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable(onClick = onNavigateJoin)
                 )
             }
 

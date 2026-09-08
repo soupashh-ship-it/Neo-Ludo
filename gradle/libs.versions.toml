@@ -11,6 +11,7 @@ datastorePreferences = "1.1.1"
 kotlinxSerialization = "1.6.3"
 kotlinxCoroutines = "1.8.1"
 firebaseBom = "33.1.2"
+pahoMqtt = "1.2.5"
 junit = "4.13.2"
 truth = "1.4.2"
 
@@ -44,6 +45,9 @@ firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-fires
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
+
+# Free public relay (MQTT) — zero-config online play, no account needed
+paho-mqttv3 = { group = "org.eclipse.paho", name = "org.eclipse.paho.client.mqttv3", version.ref = "pahoMqtt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
