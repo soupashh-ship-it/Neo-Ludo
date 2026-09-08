@@ -41,6 +41,10 @@ Notes & limits:
 - Everyone in a room converges on one relay automatically (sticky server +
   multi-relay join scan), and reconnects return to the room's own relay — if
   the lobby shows "Reconnecting…", stay on the screen or tap RETRY.
+- Both phones must run the SAME version (check Settings on each). The lobby
+  shows a diagnostics line (`You: name • id • via HiveMQ/EMQX`) — if two
+  phones show the same id, reinstall on one of them so each has its own
+  identity (same-Google-account restores can clone it).
 - Public relays are best-effort (no SLA) and obscurity-private: room traffic is
   unlisted but guessable from the code, so don't share personal info in names/chat.
 - If the host's app dies mid-match, the lowest-joined connected player takes

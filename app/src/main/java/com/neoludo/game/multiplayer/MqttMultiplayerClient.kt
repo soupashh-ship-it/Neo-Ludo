@@ -10,6 +10,7 @@ import com.neoludo.game.engine.model.TurnPhase
 import com.neoludo.game.engine.rules.MoveValidator
 import com.neoludo.game.multiplayer.backend.MqttRelay
 import com.neoludo.game.multiplayer.backend.MqttRelayDataSource
+import com.neoludo.game.multiplayer.backend.RelayLookup
 import com.neoludo.game.multiplayer.model.ActionType
 import com.neoludo.game.multiplayer.model.ChatEvent
 import com.neoludo.game.multiplayer.model.ConnectionState
@@ -99,6 +100,9 @@ class MqttMultiplayerClient(
 
     private val _chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 64)
     override val chatEvents: SharedFlow<ChatEvent> = _chatEvents.asSharedFlow()
+
+    override val transportDebug: String
+        get() = "Relay " + MqttRelay.shortName(roomServer ?: relay.connectedServer())
 
     private val snapshotLock = Any()
     private var latestMeta: RoomMetadata? = null
@@ -196,6 +200,16 @@ class MqttMultiplayerClient(
             )
         }
         roomServer = relay.connectedServer()
+        // Read-back verify: never hand out a code the relay can't serve.
+        // (A publish can report success to a broker that then drops it.)
+        val confirmed = relay.awaitRetained(MqttRelay.metaTopic(code), 2500L)?.let { raw ->
+            runCatching { relay.json.decodeFromString<RoomMetadata>(raw) }.getOrNull()?.roomId == code
+        } ?: false
+        if (!confirmed) {
+            return@withContext Result.failure(
+                RoomError.NetworkFailure("Room was not confirmed on the relay. Check your connection and try again.")
+            )
+        }
         attachListeners(code)
         synchronized(snapshotLock) {
             latestMeta = meta
@@ -215,8 +229,21 @@ class MqttMultiplayerClient(
 
         // The room may live on a different broker network than our default —
         // scan all of them (the hit pins that server for the rest of the room).
-        val rawMeta = relay.fetchRetainedFromAny(MqttRelay.metaTopic(code))
-            ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        val rawMeta = when (val lookup = relay.fetchRetainedFromAny(MqttRelay.metaTopic(code))) {
+            is RelayLookup.Found -> lookup.payload
+            is RelayLookup.NotFound -> return@withContext Result.failure(
+                if (!lookup.relayReached) {
+                    RoomError.NetworkFailure(
+                        "Could not reach the game relay. Check your internet connection and retry."
+                    )
+                } else {
+                    RoomError.RoomNotFoundDetailed(
+                        "Check the code, ask the host for a fresh code from the latest version, " +
+                            "and make sure both phones run the same version (see Settings)."
+                    )
+                }
+            )
+        }
         // The probe pinned the room's server; all subsequent connects stay there.
         roomServer = MqttRelay.pinnedServer
         val meta = runCatching { relay.json.decodeFromString<RoomMetadata>(rawMeta) }.getOrNull()
@@ -233,6 +260,9 @@ class MqttMultiplayerClient(
         // Seed players from retained presence docs.
         val now = System.currentTimeMillis()
         val known = fetchPlayers(code)
+        // Cloned installs share one id: if OUR seat is heartbeating, another
+        // live device owns it — mint a fresh id instead of stealing the seat.
+        currentUid = JoinUidResolver.resolve(currentUid, known, now)
         val existing = known[currentUid]
         val assigned: PlayerPresence
         if (existing != null) {
@@ -591,11 +621,17 @@ class MqttMultiplayerClient(
                 val c = joinedCode ?: break
                 if (!relay.isConnected()) continue
                 val self = synchronized(snapshotLock) { latestPlayers[currentUid] } ?: continue
-                relay.publish(
+                val beat = relay.publish(
                     MqttRelay.presenceTopic(c, currentUid),
                     relay.json.encodeToString(self.copy(lastSeen = System.currentTimeMillis())),
                     retained = true
                 )
+                if (beat.isFailure) {
+                    // Half-dead socket: Paho still reports connected but
+                    // nothing goes out (peers will soon see us as offline
+                    // via the Last-Will). Drop it and rejoin the room server.
+                    handleLinkFailure()
+                }
             }
         }
     }
@@ -685,6 +721,23 @@ class MqttMultiplayerClient(
                 relay.json.encodeToString(meta.copy(updatedAt = now)),
                 retained = true
             )
+        }
+    }
+
+    /**
+     * The link looks dead (failed publish, or Paho reported connection loss):
+     * drop the socket and let the retry loop return to the room's server.
+     */
+    private fun handleLinkFailure() {
+        if (joinedCode == null) return
+        _connectionState.value = ConnectionState.RECONNECTING
+        reconnectManager.onDisconnected()
+        scope.launch {
+            try {
+                relay.disconnect()
+            } catch (_: Throwable) {
+            }
+            startRetryLoop()
         }
     }
 

@@ -124,6 +124,8 @@ data class NetworkEvent(
 
 sealed class RoomError(val userMessage: String) : Exception(userMessage) {
     data object RoomNotFound : RoomError("Room does not exist. Check the room code.")
+    /** Relays reachable, but no such room on any of them — says what to check. */
+    data class RoomNotFoundDetailed(val details: String) : RoomError("Room not found. $details")
     data object RoomFull : RoomError("This room is already full.")
     data object GameAlreadyStarted : RoomError("Game has already started in this room.")
     data object RoomExpired : RoomError("This room has expired or been abandoned.")

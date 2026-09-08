@@ -297,7 +297,18 @@ fun LobbyWaitingRoomScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Diagnostics line: lets support compare identity + relay across
+            // two phones when a join misbehaves.
+            Text(
+                text = "You: ${self?.name ?: "…"} • ${client.currentUid.takeLast(4)} • via ${client.transportDebug}",
+                color = NeoLudoColors.ObsidianTextMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             if (errorMessage != null) {
                 Surface(

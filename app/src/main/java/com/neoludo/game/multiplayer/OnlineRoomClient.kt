@@ -29,6 +29,8 @@ interface OnlineRoomClient : MultiplayerClient {
 
     suspend fun joinRoom(roomId: String): Result<Unit>
     suspend fun setFillBots(fillBots: Boolean): Result<Unit>
+    /** Short human-readable transport label for diagnostics ("Relay HiveMQ", "Firebase"). */
+    val transportDebug: String
     /** Manual reconnect (lobby retry button). Best-effort per transport. */
     suspend fun refreshConnection(): Result<Unit>
 }

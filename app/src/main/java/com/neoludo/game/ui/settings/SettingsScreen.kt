@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +55,20 @@ fun SettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    // Real build version (both phones must match for online rooms).
+    val appVersion = remember {
+        runCatching {
+            val pm = context.packageManager
+            val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(context.packageName, 0)
+            }
+            info.versionName ?: "?"
+        }.getOrNull() ?: "?"
+    }
     var themeMode by remember { mutableStateOf(settings.themeMode) }
     var boardTheme by remember { mutableStateOf(settings.boardTheme) }
     var diceSkin by remember { mutableStateOf(settings.diceSkin) }
@@ -465,7 +480,7 @@ fun SettingsScreen(
             // App About Info
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text(text = "Neo Ludo v1.7.0", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "Neo Ludo v$appVersion", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(text = "100% Ad-Free • Pure Play Multiplayer", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
                 }
             }

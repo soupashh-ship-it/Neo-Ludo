@@ -21,7 +21,14 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+
+/** Result of a multi-relay retained lookup (see `fetchRetainedFromAny`). */
+sealed interface RelayLookup {
+    data class Found(val payload: String, val server: String) : RelayLookup
+    data class NotFound(val relayReached: Boolean) : RelayLookup
+}
 
 /**
  * Zero-config online transport over free public MQTT brokers.
@@ -72,6 +79,14 @@ object MqttRelay {
         pinnedServer = null
     }
 
+    /** Short broker label for the lobby diagnostics line. */
+    fun shortName(uri: String?): String = when {
+        uri == null -> "?"
+        uri.contains("hivemq", ignoreCase = true) -> "HiveMQ"
+        uri.contains("emqx", ignoreCase = true) -> "EMQX"
+        else -> "?"
+    }
+
     /** Last-known-good (or explicitly preferred) server first, rest in order. */
     fun orderedServers(prefer: String? = null): List<String> {
         val first = prefer?.takeIf { SERVERS.contains(it) } ?: pinnedServer
@@ -88,10 +103,24 @@ object MqttRelay {
     fun generateRoomCode(): String =
         "NL-" + (1..6).map { CODE_CHARS.random() }.joinToString("")
 
+    /**
+     * Aggressively recovers the code from chat-app paste junk: formatting
+     * (`*NL-ABC123*`), quotes, BiDi marks, or the whole shared message
+     * ("Join my game! Room code: NL-ABC123"). A valid code must never
+     * become "room does not exist" because of surrounding text.
+     */
     fun normalizeRoomCode(raw: String): String {
-        val stripped = raw.trim().uppercase().replace(" ", "").replace("-", "")
-        return if (stripped.startsWith("NL")) "NL-" + stripped.removePrefix("NL")
+        val upper = raw.trim().uppercase()
+        val stripped = upper.filter { it.isLetterOrDigit() }
+        val direct = if (stripped.startsWith("NL")) "NL-" + stripped.removePrefix("NL")
         else "NL-$stripped"
+        if (CODE_REGEX.matches(direct)) return direct
+        // Fall back to an embedded token with word boundaries, so a 7+
+        // character typo can't silently resolve to a different room.
+        val embedded = Regex("(?<![A-Z0-9])NL-?([A-Z0-9]{6})(?![A-Z0-9])")
+            .find(upper)?.groupValues?.get(1)
+        if (embedded != null) return "NL-$embedded"
+        return direct
     }
 
     /** Null when the code is malformed (also rejects MQTT wildcards). */
@@ -287,18 +316,26 @@ class MqttRelayDataSource {
      * report "room does not exist" when the guest's default server differs
      * from the host's. The winning server is pinned for subsequent connects.
      *
+     * [RelayLookup.NotFound.relayReached] tells "your internet/relays are
+     * down" apart from "relays are fine but this room isn't on any of them"
+     * so the UI can say something actionable.
+     *
      * Fast path first: when already connected, one cheap lookup on the live
      * link (~1.2s) before fanning out to short-lived probe connections.
      */
-    suspend fun fetchRetainedFromAny(topic: String, timeoutMs: Long = 9000L): String? {
-        awaitRetained(topic, 1200L)?.let { return it }
+    suspend fun fetchRetainedFromAny(topic: String, timeoutMs: Long = 9000L): RelayLookup {
+        awaitRetained(topic, 1200L)?.let { payload ->
+            connectedServer()?.let { MqttRelay.pinServer(it) }
+            return RelayLookup.Found(payload, connectedServer() ?: "")
+        }
         return withContext(Dispatchers.IO) {
+            val anyConnected = AtomicBoolean(isConnected())
             val winner = CompletableDeferred<Pair<String, String>?>(parent = null)
             coroutineScope {
                 val perProbeMs = (timeoutMs - 1000L).coerceAtLeast(2500L)
                 val jobs = MqttRelay.SERVERS.map { uri ->
                     launch {
-                        val payload = probeRetained(uri, topic, perProbeMs)
+                        val payload = probeRetained(uri, topic, perProbeMs) { anyConnected.set(true) }
                         if (payload != null) winner.complete(uri to payload)
                     }
                 }
@@ -311,8 +348,10 @@ class MqttRelayDataSource {
                     if (hit != null) {
                         MqttRelay.pinServer(hit.first)
                         Log.d(tag, "Room topic found on ${hit.first}")
+                        RelayLookup.Found(hit.second, hit.first)
+                    } else {
+                        RelayLookup.NotFound(relayReached = anyConnected.get())
                     }
-                    hit?.second
                 } finally {
                     jobs.forEach { it.cancel() }
                 }
@@ -325,7 +364,12 @@ class MqttRelayDataSource {
      * for the retained message, then disconnects. Never touches the live
      * connection or its subscriptions.
      */
-    private fun probeRetained(uri: String, topic: String, timeoutMs: Long): String? {
+    private fun probeRetained(
+        uri: String,
+        topic: String,
+        timeoutMs: Long,
+        onConnected: () -> Unit = {}
+    ): String? {
         var probe: MqttClient? = null
         return try {
             probe = MqttClient(uri, "neoludo-probe-" + UUID.randomUUID().toString().take(8), MemoryPersistence())
@@ -337,6 +381,7 @@ class MqttRelayDataSource {
                     isAutomaticReconnect = false
                 }
             )
+            onConnected()
             val latch = CountDownLatch(1)
             val hit = AtomicReference<String?>(null)
             probe.subscribe(topic, 1) { _, message ->
