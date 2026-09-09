@@ -67,7 +67,7 @@ import com.neoludo.game.core.model.PawnSkin
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.engine.model.DiceState
 import com.neoludo.game.engine.model.PlayerColor
-import com.neoludo.game.ui.game.Dice3DRenderer
+import com.neoludo.game.ui.game.ClassicDice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -328,12 +328,11 @@ fun LockerScreen(
                                 letterSpacing = 1.sp
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Dice3DRenderer(
-                                diceState = DiceState(value = testDiceValue, canRoll = true),
-                                playerColor = PlayerColor.RED,
-                                isRolling = isTestRolling,
-                                skin = currentDiceSkin,
-                                onRollClick = {
+                            ClassicDice(
+                                value = testDiceValue,
+                                rolling = isTestRolling,
+                                enabled = !isTestRolling,
+                                onClick = {
                                     scope.launch {
                                         isTestRolling = true
                                         testDiceValue = (1..6).random()

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.joinAll
@@ -201,9 +202,13 @@ class MqttRelayDataSource {
                 }
                 c.connect(opts)
                 client = c
+                // A connection without subscriptions is worse than none
+                // (silent deafness): retry, else drop this candidate.
+                if (!refreshSubscriptions(maxAttempts = 3)) {
+                    throw IllegalStateException("Relay $uri refused subscriptions")
+                }
                 connectedServer = uri
                 MqttRelay.pinServer(uri)
-                resubscribeAll()
                 return@withContext Result.success(Unit)
             } catch (e: Throwable) {
                 lastError = e
@@ -438,19 +443,42 @@ class MqttRelayDataSource {
         awaitClose { unsubscribePrefix(prefix, handler) }
     }
 
+    /**
+     * Re-subscribes every live topic, retrying with backoff. Returns false
+     * when subscriptions cannot be confirmed — callers must treat the link
+     * as broken (an unsubscribed but "connected" client silently misses
+     * the whole game).
+     */
+    suspend fun refreshSubscriptions(maxAttempts: Int = 3): Boolean = withContext(Dispatchers.IO) {
+        repeat(maxAttempts) { attempt ->
+            if (attempt > 0) delay(1000L * attempt)
+            try {
+                resubscribeAll()
+                return@withContext true
+            } catch (e: Throwable) {
+                Log.w(tag, "resubscribe attempt ${attempt + 1} failed: ${e.message}")
+            }
+        }
+        false
+    }
+
     private fun resubscribeAll() {
         val topics: Map<String, Int>
         synchronized(this) {
             topics = subscribedTopics.toMap()
         }
         val c = client ?: return
+        val failures = mutableListOf<String>()
         for ((topic, qos) in topics) {
             try {
                 if (c.isConnected) c.subscribe(topic, qos)
+                else failures += topic
             } catch (e: Throwable) {
+                failures += topic
                 Log.w(tag, "resubscribe $topic failed: ${e.message}")
             }
         }
+        if (failures.isNotEmpty()) throw IllegalStateException("resubscribe failed: $failures")
     }
 
     private val relayCallback = object : MqttCallbackExtended {

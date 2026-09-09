@@ -2,7 +2,6 @@ package com.neoludo.game.ui.game
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,15 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import com.neoludo.game.core.designsystem.LudoBoardPalette
-import com.neoludo.game.core.designsystem.NeoLudoColors
 import com.neoludo.game.core.model.BoardTheme
 import com.neoludo.game.core.model.PawnSkin
 import com.neoludo.game.engine.coordinate.BoardCoordinates
@@ -49,6 +43,27 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+// Traditional Ludo palette — one classic look for everyone.
+private val ClassicRed = Color(0xFFE53935)
+private val ClassicGreen = Color(0xFF43A047)
+private val ClassicYellow = Color(0xFFF2B705)
+private val ClassicBlue = Color(0xFF1E88E5)
+private val ClassicPaper = Color(0xFFFFFFFF)
+private val ClassicInk = Color(0xFF616161)
+private val ClassicFrame = Color(0xFF37474F)
+private val ClassicStarGray = Color(0xFF9E9E9E)
+private val ClassicGold = Color(0xFFFFC107)
+
+private fun classicColor(color: PlayerColor): Color = when (color) {
+    PlayerColor.RED -> ClassicRed
+    PlayerColor.GREEN -> ClassicGreen
+    PlayerColor.YELLOW -> ClassicYellow
+    PlayerColor.BLUE -> ClassicBlue
+}
+
+private fun darker(color: Color, factor: Float = 0.62f): Color =
+    Color(color.red * factor, color.green * factor, color.blue * factor, color.alpha)
+
 private data class ActivePieceHopState(
     val playerColor: PlayerColor,
     val pieceId: Int,
@@ -57,13 +72,6 @@ private data class ActivePieceHopState(
     val progress: Float
 )
 
-private data class BoardVisualParticle(
-    val id: Long,
-    val center: Offset,
-    val color: Color,
-    val isShockwave: Boolean,
-    val progress: Animatable<Float, *>
-)
 @Composable
 fun CanvasLudoBoard(
     gameState: GameState,
@@ -73,37 +81,16 @@ fun CanvasLudoBoard(
     pawnSkin: PawnSkin = PawnSkin.CYBER_PIPS,
     modifier: Modifier = Modifier
 ) {
-    val palette = NeoLudoColors.getBoardColors(boardTheme)
-
-    val infiniteTransition = rememberInfiniteTransition(label = "board_halo")
-    val haloPulse by infiniteTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "halo_pulse"
-    )
-
-    // Safe star rotation and pulse shield effect
-    val starRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "star_rotation"
-    )
-    val starShieldPulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
+    // boardTheme / pawnSkin are intentionally ignored: one classic look.
+    val pulseTransition = rememberInfiniteTransition(label = "classic_select_pulse")
+    val selectPulse by pulseTransition.animateFloat(
+        initialValue = 0.92f,
         targetValue = 1.18f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(850, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "star_shield_pulse"
+        label = "select_pulse"
     )
 
     val selectablePieceIds = if (gameState.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
@@ -112,7 +99,6 @@ fun CanvasLudoBoard(
             .toSet()
     } else emptySet()
 
-    // Animation tracking for step-by-step hopping
     var activeHop by remember { mutableStateOf<ActivePieceHopState?>(null) }
     val stepAnimProgress = remember { Animatable(0f) }
 
@@ -127,13 +113,9 @@ fun CanvasLudoBoard(
         }
     }
 
-    // Active particles (shockwaves and starbursts)
-    val activeParticles = remember { mutableStateListOf<BoardVisualParticle>() }
-
     LaunchedEffect(gameState) {
         val currentEnginePositions = gameState.players.flatMap { p -> p.pieces.map { "${p.color}_${it.id}" to it.position } }.toMap()
 
-        // 1. Check which piece moved
         var movingPieceInfo: Triple<PlayerColor, Piece, PiecePosition>? = null
         for (player in gameState.players) {
             for (piece in player.pieces) {
@@ -171,58 +153,17 @@ fun CanvasLudoBoard(
                         targetValue = 1f,
                         animationSpec = tween(stepDuration, easing = LinearOutSlowInEasing)
                     )
-                    // Update visual position step-by-step
                     val nextStepPos = intermediateSteps[i + 1]
                     visualPositions[moverKey] = nextStepPos
                 }
                 activeHop = null
             }
 
-            // After move completes, check for capture shockwave & home arrival
-            if (toPos is PiecePosition.Home) {
-                val particleId = System.currentTimeMillis() + moverPiece.id * 100 + moverColor.ordinal
-                val anim = Animatable(0f)
-                val p = BoardVisualParticle(
-                    id = particleId,
-                    center = Offset.Zero, // Calculated in draw pass
-                    color = palette.starSafeColor,
-                    isShockwave = false,
-                    progress = anim
-                )
-                activeParticles.add(p)
-                launch {
-                    anim.animateTo(1f, tween(650, easing = LinearOutSlowInEasing))
-                    activeParticles.remove(p)
-                }
-            }
-
-            // Sync all visual positions to engine positions (captured enemy pieces return to yard now)
+            // Sync all visual positions to engine positions (captures return to yard now)
             currentEnginePositions.forEach { (k, targetPos) ->
-                val prevVisual = visualPositions[k]
-                if (prevVisual is PiecePosition.Path && targetPos is PiecePosition.Yard && k != moverKey) {
-                    // Captured piece: trigger shockwave at capture tile
-                    val parts = k.split("_")
-                    val capColor = runCatching { PlayerColor.valueOf(parts[0]) }.getOrDefault(PlayerColor.RED)
-                    val (r, c) = BoardCoordinates.getGridCoordForPosition(capColor, prevVisual)
-                    val particleId = System.currentTimeMillis() + targetPos.slot * 100 + capColor.ordinal
-                    val anim = Animatable(0f)
-                    val p = BoardVisualParticle(
-                        id = particleId,
-                        center = Offset(c, r), // grid col/row marker
-                        color = NeoLudoColors.getPlayerColor(capColor, boardTheme),
-                        isShockwave = true,
-                        progress = anim
-                    )
-                    activeParticles.add(p)
-                    launch {
-                        anim.animateTo(1f, tween(500, easing = LinearOutSlowInEasing))
-                        activeParticles.remove(p)
-                    }
-                }
                 visualPositions[k] = targetPos
             }
         } else {
-            // No movement: sync visual positions directly
             currentEnginePositions.forEach { (k, v) ->
                 visualPositions[k] = v
             }
@@ -257,416 +198,197 @@ fun CanvasLudoBoard(
             val boardSize = size.minDimension
             val cellSize = boardSize / 15f
 
-            // 1. Draw Yard Quadrants
-            drawYardBases(cellSize, palette)
-
-            // 2. Draw 52 Pathway Tiles with Animated Star Safe Shields
-            drawPathwayCells(cellSize, palette, starRotation, starShieldPulse)
-
-            // 3. Draw Home Stretches
-            drawHomeStretches(cellSize, palette)
-
-            // 4. Draw Center Home Quadrant Prism
-            drawCenterHomePrism(cellSize, palette, starRotation)
-
-            // 5. Draw Stationary Pieces
+            drawClassicFrame(cellSize)
+            drawClassicYards(cellSize)
+            drawClassicPath(cellSize)
+            drawClassicHomeStretches(cellSize)
+            drawClassicHomeCenter(cellSize)
             drawAllStationaryPieces(
                 gameState = gameState,
                 visualPositions = visualPositions,
                 cellSize = cellSize,
                 selectablePieceIds = selectablePieceIds,
                 activeHop = activeHop,
-                haloScale = haloPulse,
-                palette = palette,
-                pawnSkin = pawnSkin
+                selectPulse = selectPulse
             )
-
-            // 6. Draw Active Hopping Piece with Parabolic Bounce
             activeHop?.let { hop ->
                 drawHoppingPiece(
                     hopState = hop,
                     stepProgress = stepAnimProgress.value,
-                    cellSize = cellSize,
-                    palette = palette,
-                    pawnSkin = pawnSkin
+                    cellSize = cellSize
                 )
             }
-
-            // 7. Draw Visual Particles (Shockwaves & Home Starbursts)
-            drawVisualParticles(activeParticles, cellSize, palette)
         }
     }
 }
 
-private fun DrawScope.drawYardBases(cellSize: Float, palette: LudoBoardPalette) {
-    val yardSize = cellSize * 6f
+// ---------- classic board ----------
 
-    // Red Yard (Top Left)
-    drawYardBase(
-        topLeft = Offset(0f, 0f),
-        size = Size(yardSize, yardSize),
-        color = palette.red,
-        slots = BoardCoordinates.YARD_SLOT_COORDINATES.getValue(PlayerColor.RED),
-        cellSize = cellSize,
-        palette = palette
-    )
-
-    // Green Yard (Top Right)
-    drawYardBase(
-        topLeft = Offset(cellSize * 9f, 0f),
-        size = Size(yardSize, yardSize),
-        color = palette.green,
-        slots = BoardCoordinates.YARD_SLOT_COORDINATES.getValue(PlayerColor.GREEN),
-        cellSize = cellSize,
-        palette = palette
-    )
-
-    // Yellow Yard (Bottom Right)
-    drawYardBase(
-        topLeft = Offset(cellSize * 9f, cellSize * 9f),
-        size = Size(yardSize, yardSize),
-        color = palette.yellow,
-        slots = BoardCoordinates.YARD_SLOT_COORDINATES.getValue(PlayerColor.YELLOW),
-        cellSize = cellSize,
-        palette = palette
-    )
-
-    // Blue Yard (Bottom Left)
-    drawYardBase(
-        topLeft = Offset(0f, cellSize * 9f),
-        size = Size(yardSize, yardSize),
-        color = palette.blue,
-        slots = BoardCoordinates.YARD_SLOT_COORDINATES.getValue(PlayerColor.BLUE),
-        cellSize = cellSize,
-        palette = palette
+private fun DrawScope.drawClassicFrame(cellSize: Float) {
+    drawRect(color = ClassicPaper, topLeft = Offset.Zero, size = size)
+    val w = cellSize * 0.1f
+    drawRect(
+        color = ClassicFrame,
+        topLeft = Offset(w / 2f, w / 2f),
+        size = Size(size.width - w, size.height - w),
+        style = Stroke(width = w)
     )
 }
 
-private fun DrawScope.drawYardBase(
-    topLeft: Offset,
-    size: Size,
-    color: Color,
-    slots: List<Pair<Float, Float>>,
-    cellSize: Float,
-    palette: LudoBoardPalette
-) {
-    val isClassic = palette.theme == BoardTheme.CLASSIC_ARCADE
-
-    // Outer Yard Card
-    drawRoundRect(
-        color = if (isClassic) color else palette.cardSurface,
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = CornerRadius(24f, 24f)
+private fun DrawScope.drawClassicYards(cellSize: Float) {
+    val origins = mapOf(
+        PlayerColor.RED to (0 to 0),
+        PlayerColor.GREEN to (9 to 0),
+        PlayerColor.YELLOW to (9 to 9),
+        PlayerColor.BLUE to (0 to 9)
     )
-    drawRoundRect(
-        color = if (isClassic) Color(0xFF263238) else color.copy(alpha = 0.5f),
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = CornerRadius(24f, 24f),
-        style = Stroke(width = if (isClassic) 2.5f else 3f)
-    )
-
-    // Inner Inset Plate
-    val inset = cellSize * 0.7f
-    val innerTopLeft = Offset(topLeft.x + inset, topLeft.y + inset)
-    val innerSize = Size(size.width - inset * 2, size.height - inset * 2)
-
-    if (isClassic) {
-        // Pure White interior box (matching classic arcade Ludo reference)
+    origins.forEach { (color, origin) ->
+        val (col0, row0) = origin
+        val fill = classicColor(color)
+        // Colored 6x6 quadrant
+        drawRect(
+            color = fill,
+            topLeft = Offset(col0 * cellSize, row0 * cellSize),
+            size = Size(cellSize * 6f, cellSize * 6f)
+        )
+        // White inner court
         drawRoundRect(
-            color = Color.White,
-            topLeft = innerTopLeft,
-            size = innerSize,
-            cornerRadius = CornerRadius(16f, 16f)
+            color = ClassicPaper,
+            topLeft = Offset((col0 + 0.7f) * cellSize, (row0 + 0.7f) * cellSize),
+            size = Size(cellSize * 4.6f, cellSize * 4.6f),
+            cornerRadius = CornerRadius(cellSize * 0.45f, cellSize * 0.45f)
         )
         drawRoundRect(
-            color = Color(0xFFCFD8DC),
-            topLeft = innerTopLeft,
-            size = innerSize,
-            cornerRadius = CornerRadius(16f, 16f),
-            style = Stroke(width = 1.5f)
+            color = ClassicInk.copy(alpha = 0.55f),
+            topLeft = Offset((col0 + 0.7f) * cellSize, (row0 + 0.7f) * cellSize),
+            size = Size(cellSize * 4.6f, cellSize * 4.6f),
+            cornerRadius = CornerRadius(cellSize * 0.45f, cellSize * 0.45f),
+            style = Stroke(width = (cellSize * 0.03f).coerceAtLeast(1.5f))
         )
-    } else {
-        drawRoundRect(
-            brush = Brush.radialGradient(
-                listOf(color.copy(alpha = 0.28f), color.copy(alpha = 0.08f)),
-                center = Offset(innerTopLeft.x + innerSize.width / 2f, innerTopLeft.y + innerSize.height / 2f),
-                radius = innerSize.width * 0.75f
-            ),
-            topLeft = innerTopLeft,
-            size = innerSize,
-            cornerRadius = CornerRadius(16f, 16f)
-        )
-    }
-
-    // Circular Recessed Pawn Slots
-    slots.forEach { (r, c) ->
-        val center = Offset(c * cellSize + cellSize / 2f, r * cellSize + cellSize / 2f)
-        val radius = cellSize * 0.65f
-
-        if (isClassic) {
-            // Classic solid colored circular slot with golden rim
+        // Four start circles
+        val slots = BoardCoordinates.YARD_SLOT_COORDINATES.getValue(color)
+        slots.forEach { (row, col) ->
+            val center = Offset(col * cellSize, row * cellSize)
+            drawCircle(color = ClassicPaper, radius = cellSize * 0.44f, center = center)
             drawCircle(
-                color = color,
-                radius = radius * 0.95f,
-                center = center
-            )
-            drawCircle(
-                color = Color(0xFFFFD54F),
-                radius = radius * 0.95f,
+                color = fill,
+                radius = cellSize * 0.44f,
                 center = center,
-                style = Stroke(width = 3f)
-            )
-            drawCircle(
-                color = Color.Black.copy(alpha = 0.15f),
-                radius = radius * 0.75f,
-                center = center,
-                style = Stroke(width = 1f)
-            )
-        } else {
-            drawCircle(
-                color = palette.background,
-                radius = radius,
-                center = center
-            )
-            drawCircle(
-                color = color.copy(alpha = 0.65f),
-                radius = radius,
-                center = center,
-                style = Stroke(width = 2.5f)
+                style = Stroke(width = (cellSize * 0.075f).coerceAtLeast(2f))
             )
         }
     }
 }
 
-private fun DrawScope.drawDirectionalArrow(center: Offset, size: Float, color: Color, pathIndex: Int) {
-    val path = Path()
-    val half = size / 2f
-    when (pathIndex) {
-        0 -> { // RED: Pointing UP
-            path.moveTo(center.x, center.y - half)
-            path.lineTo(center.x + half * 0.75f, center.y + half * 0.4f)
-            path.lineTo(center.x + half * 0.25f, center.y + half * 0.4f)
-            path.lineTo(center.x + half * 0.25f, center.y + half)
-            path.lineTo(center.x - half * 0.25f, center.y + half)
-            path.lineTo(center.x - half * 0.25f, center.y + half * 0.4f)
-            path.lineTo(center.x - half * 0.75f, center.y + half * 0.4f)
-            path.close()
-        }
-        13 -> { // GREEN: Pointing RIGHT
-            path.moveTo(center.x + half, center.y)
-            path.lineTo(center.x - half * 0.4f, center.y + half * 0.75f)
-            path.lineTo(center.x - half * 0.4f, center.y + half * 0.25f)
-            path.lineTo(center.x - half, center.y + half * 0.25f)
-            path.lineTo(center.x - half, center.y - half * 0.25f)
-            path.lineTo(center.x - half * 0.4f, center.y - half * 0.25f)
-            path.lineTo(center.x - half * 0.4f, center.y - half * 0.75f)
-            path.close()
-        }
-        26 -> { // YELLOW: Pointing DOWN
-            path.moveTo(center.x, center.y + half)
-            path.lineTo(center.x + half * 0.75f, center.y - half * 0.4f)
-            path.lineTo(center.x + half * 0.25f, center.y - half * 0.4f)
-            path.lineTo(center.x + half * 0.25f, center.y - half)
-            path.lineTo(center.x - half * 0.25f, center.y - half)
-            path.lineTo(center.x - half * 0.25f, center.y - half * 0.4f)
-            path.lineTo(center.x - half * 0.75f, center.y - half * 0.4f)
-            path.close()
-        }
-        39 -> { // BLUE: Pointing LEFT
-            path.moveTo(center.x - half, center.y)
-            path.lineTo(center.x + half * 0.4f, center.y + half * 0.75f)
-            path.lineTo(center.x + half * 0.4f, center.y + half * 0.25f)
-            path.lineTo(center.x + half, center.y + half * 0.25f)
-            path.lineTo(center.x + half, center.y - half * 0.25f)
-            path.lineTo(center.x + half * 0.4f, center.y - half * 0.25f)
-            path.lineTo(center.x + half * 0.4f, center.y - half * 0.75f)
-            path.close()
+private fun DrawScope.drawClassicPath(cellSize: Float) {
+    val stroke = Stroke(width = (cellSize * 0.032f).coerceAtLeast(1.5f))
+    val startOwner = mapOf(0 to PlayerColor.RED, 13 to PlayerColor.GREEN, 26 to PlayerColor.YELLOW, 39 to PlayerColor.BLUE)
+    BoardCoordinates.PATH_COORDINATES.forEachIndexed { globalIdx, coord ->
+        val left = coord.col * cellSize
+        val top = coord.row * cellSize
+        val owner = startOwner[globalIdx]
+        drawRect(
+            color = if (owner != null) classicColor(owner) else ClassicPaper,
+            topLeft = Offset(left, top),
+            size = Size(cellSize, cellSize)
+        )
+        drawRect(color = ClassicInk, topLeft = Offset(left, top), size = Size(cellSize, cellSize), style = stroke)
+        val center = Offset(left + cellSize / 2f, top + cellSize / 2f)
+        when {
+            owner != null -> drawStar(center, cellSize * 0.3f, Color.White)
+            globalIdx in BoardCoordinates.STAR_CELL_INDICES -> drawStar(center, cellSize * 0.3f, ClassicStarGray)
         }
     }
-    drawPath(path, color.copy(alpha = 0.85f))
-    drawPath(path, Color.White.copy(alpha = 0.9f), style = Stroke(width = 1.2f))
 }
-private fun DrawScope.drawPathwayCells(
-    cellSize: Float,
-    palette: LudoBoardPalette,
-    starRotation: Float,
-    starShieldPulse: Float
-) {
-    BoardCoordinates.PATH_COORDINATES.forEachIndexed { index, coord ->
-        val topLeft = Offset(coord.col * cellSize, coord.row * cellSize)
-        val rectSize = Size(cellSize, cellSize)
-        val center = Offset(topLeft.x + cellSize / 2f, topLeft.y + cellSize / 2f)
 
-        val isSafeStar = index in BoardCoordinates.STAR_CELL_INDICES
-        val isStartCell = index in setOf(0, 13, 26, 39)
+private enum class ArrowDir { EAST, SOUTH, WEST, NORTH }
 
-        val cellColor = when (index) {
-            0 -> palette.red.copy(alpha = 0.35f)
-            13 -> palette.green.copy(alpha = 0.35f)
-            26 -> palette.yellow.copy(alpha = 0.35f)
-            39 -> palette.blue.copy(alpha = 0.35f)
-            else -> palette.cellPathDefault
-        }
-
-        // Tile background
-        drawRoundRect(
-            color = cellColor,
-            topLeft = Offset(topLeft.x + 1.5f, topLeft.y + 1.5f),
-            size = Size(rectSize.width - 3f, rectSize.height - 3f),
-            cornerRadius = CornerRadius(8f, 8f)
-        )
-
-        // Tile border
-        drawRoundRect(
-            color = palette.cellBorder,
-            topLeft = Offset(topLeft.x + 1.5f, topLeft.y + 1.5f),
-            size = Size(rectSize.width - 3f, rectSize.height - 3f),
-            cornerRadius = CornerRadius(8f, 8f),
-            style = Stroke(width = 1f)
-        )
-
-        // Safe Cell: Rotating Star with Orbiting Pulse Shield
-        if (isSafeStar) {
-            // Outer rotating orbiting shield ring
-            val shieldRadius = cellSize * 0.42f * starShieldPulse
-            drawCircle(
-                color = palette.starSafeColor.copy(alpha = 0.25f),
-                radius = shieldRadius,
-                center = center
-            )
-            drawCircle(
-                color = palette.starSafeColor.copy(alpha = 0.65f),
-                radius = shieldRadius,
-                center = center,
-                style = Stroke(width = 1.2f)
-            )
-
-            // Draw rotating star
-            drawRotatedStarIcon(
-                center = center,
-                radius = cellSize * 0.32f,
-                color = palette.starSafeColor,
-                rotationDegrees = starRotation
-            )
-        }
-
-        // Directional Arrow on Start Cells
-        if (isStartCell) {
-            val arrowColor = when (index) {
-                0 -> palette.red
-                13 -> palette.green
-                26 -> palette.yellow
-                else -> palette.blue
+private fun DrawScope.drawClassicHomeStretches(cellSize: Float) {
+    val stroke = Stroke(width = (cellSize * 0.032f).coerceAtLeast(1.5f))
+    val data = listOf(
+        Triple(PlayerColor.RED, ArrowDir.EAST, BoardCoordinates.HOME_STRETCH_COORDINATES.getValue(PlayerColor.RED)),
+        Triple(PlayerColor.GREEN, ArrowDir.SOUTH, BoardCoordinates.HOME_STRETCH_COORDINATES.getValue(PlayerColor.GREEN)),
+        Triple(PlayerColor.YELLOW, ArrowDir.WEST, BoardCoordinates.HOME_STRETCH_COORDINATES.getValue(PlayerColor.YELLOW)),
+        Triple(PlayerColor.BLUE, ArrowDir.NORTH, BoardCoordinates.HOME_STRETCH_COORDINATES.getValue(PlayerColor.BLUE))
+    )
+    data.forEach { (color, dir, cells) ->
+        val fill = classicColor(color)
+        cells.forEachIndexed { i, coord ->
+            val left = coord.col * cellSize
+            val top = coord.row * cellSize
+            drawRect(color = fill, topLeft = Offset(left, top), size = Size(cellSize, cellSize))
+            drawRect(color = ClassicInk, topLeft = Offset(left, top), size = Size(cellSize, cellSize), style = stroke)
+            if (i == 2) {
+                drawArrow(Offset(left + cellSize / 2f, top + cellSize / 2f), cellSize * 0.26f, dir, Color.White)
             }
-            drawDirectionalArrow(center, cellSize * 0.55f, arrowColor, index)
         }
     }
 }
 
-private fun DrawScope.drawHomeStretches(cellSize: Float, palette: LudoBoardPalette) {
-    BoardCoordinates.HOME_STRETCH_COORDINATES.forEach { (color, coords) ->
-        val playerColor = when (color) {
-            PlayerColor.RED -> palette.red
-            PlayerColor.GREEN -> palette.green
-            PlayerColor.YELLOW -> palette.yellow
-            PlayerColor.BLUE -> palette.blue
+private fun DrawScope.drawClassicHomeCenter(cellSize: Float) {
+    // 3x3 center: one triangle per color, apex meeting in the middle.
+    val x0 = 6f * cellSize
+    val x1 = 9f * cellSize
+    val cx = 7.5f * cellSize
+    val cy = 7.5f * cellSize
+    fun tri(color: PlayerColor, a: Offset, b: Offset) {
+        val path = Path().apply {
+            moveTo(a.x, a.y)
+            lineTo(b.x, b.y)
+            lineTo(cx, cy)
+            close()
         }
-        coords.forEach { coord ->
-            val topLeft = Offset(coord.col * cellSize + 1.5f, coord.row * cellSize + 1.5f)
-            val rectSize = Size(cellSize - 3f, cellSize - 3f)
-
-            drawRoundRect(
-                brush = Brush.radialGradient(
-                    listOf(playerColor.copy(alpha = 0.75f), playerColor.copy(alpha = 0.4f)),
-                    center = Offset(topLeft.x + rectSize.width / 2f, topLeft.y + rectSize.height / 2f),
-                    radius = rectSize.width
-                ),
-                topLeft = topLeft,
-                size = rectSize,
-                cornerRadius = CornerRadius(8f, 8f)
-            )
-            drawRoundRect(
-                color = playerColor.copy(alpha = 0.6f),
-                topLeft = topLeft,
-                size = rectSize,
-                cornerRadius = CornerRadius(8f, 8f),
-                style = Stroke(width = 1.5f)
-            )
-        }
+        drawPath(path, classicColor(color))
+        drawPath(path, Color.White, style = Stroke(width = (cellSize * 0.045f).coerceAtLeast(2f)))
     }
+    tri(PlayerColor.GREEN, Offset(x0, x0), Offset(x1, x0)) // north
+    tri(PlayerColor.YELLOW, Offset(x1, x0), Offset(x1, x1)) // east
+    tri(PlayerColor.BLUE, Offset(x0, x1), Offset(x1, x1)) // south
+    tri(PlayerColor.RED, Offset(x0, x0), Offset(x0, x1)) // west
 }
 
-private fun DrawScope.drawCenterHomePrism(cellSize: Float, palette: LudoBoardPalette, starRotation: Float) {
-    val centerTopLeft = Offset(cellSize * 6f, cellSize * 6f)
-    val centerSize = Size(cellSize * 3f, cellSize * 3f)
-    val center = Offset(centerTopLeft.x + centerSize.width / 2f, centerTopLeft.y + centerSize.height / 2f)
-
-    // Red Triangle (Left)
-    val redPath = Path().apply {
-        moveTo(centerTopLeft.x, centerTopLeft.y)
-        lineTo(center.x, center.y)
-        lineTo(centerTopLeft.x, centerTopLeft.y + centerSize.height)
-        close()
-    }
-    drawPath(redPath, palette.red.copy(alpha = 0.88f))
-
-    // Green Triangle (Top)
-    val greenPath = Path().apply {
-        moveTo(centerTopLeft.x, centerTopLeft.y)
-        lineTo(center.x, center.y)
-        lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y)
-        close()
-    }
-    drawPath(greenPath, palette.green.copy(alpha = 0.88f))
-
-    // Yellow Triangle (Right)
-    val yellowPath = Path().apply {
-        moveTo(centerTopLeft.x + centerSize.width, centerTopLeft.y)
-        lineTo(center.x, center.y)
-        lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y + centerSize.height)
-        close()
-    }
-    drawPath(yellowPath, palette.yellow.copy(alpha = 0.88f))
-
-    // Blue Triangle (Bottom)
-    val bluePath = Path().apply {
-        moveTo(centerTopLeft.x, centerTopLeft.y + centerSize.height)
-        lineTo(center.x, center.y)
-        lineTo(centerTopLeft.x + centerSize.width, centerTopLeft.y + centerSize.height)
-        close()
-    }
-    drawPath(bluePath, palette.blue.copy(alpha = 0.88f))
-
-    // Center Star Core
-    drawCircle(palette.centerHomeColor, cellSize * 0.72f, center)
-    drawCircle(palette.starSafeColor.copy(alpha = 0.85f), cellSize * 0.72f, center, style = Stroke(2.5f))
-    drawRotatedStarIcon(center, cellSize * 0.48f, palette.starSafeColor, starRotation)
-}
-
-private fun DrawScope.drawRotatedStarIcon(
-    center: Offset,
-    radius: Float,
-    color: Color,
-    rotationDegrees: Float
-) {
+private fun DrawScope.drawStar(center: Offset, rOuter: Float, color: Color) {
+    val rInner = rOuter * 0.45f
     val path = Path()
-    val points = 5
-    val innerRadius = radius * 0.45f
-    val angleStep = Math.PI / points
-    val rotationRad = (rotationDegrees * Math.PI / 180.0)
-
-    for (i in 0 until points * 2) {
-        val r = if (i % 2 == 0) radius else innerRadius
-        val angle = i * angleStep - Math.PI / 2.0 + rotationRad
-        val x = (center.x + r * cos(angle)).toFloat()
-        val y = (center.y + r * sin(angle)).toFloat()
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    repeat(10) { i ->
+        val r = if (i % 2 == 0) rOuter else rInner
+        val a = -PI / 2.0 + i * PI / 5.0
+        val p = Offset(center.x + (r * cos(a)).toFloat(), center.y + (r * sin(a)).toFloat())
+        if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
     }
     path.close()
-    drawPath(path, color, style = Fill)
+    drawPath(path, color)
 }
+
+private fun DrawScope.drawArrow(center: Offset, size: Float, dir: ArrowDir, color: Color) {
+    val path = Path()
+    when (dir) {
+        ArrowDir.EAST -> {
+            path.moveTo(center.x + size, center.y)
+            path.lineTo(center.x - size * 0.6f, center.y - size * 0.8f)
+            path.lineTo(center.x - size * 0.6f, center.y + size * 0.8f)
+        }
+        ArrowDir.WEST -> {
+            path.moveTo(center.x - size, center.y)
+            path.lineTo(center.x + size * 0.6f, center.y - size * 0.8f)
+            path.lineTo(center.x + size * 0.6f, center.y + size * 0.8f)
+        }
+        ArrowDir.SOUTH -> {
+            path.moveTo(center.x, center.y + size)
+            path.lineTo(center.x - size * 0.8f, center.y - size * 0.6f)
+            path.lineTo(center.x + size * 0.8f, center.y - size * 0.6f)
+        }
+        ArrowDir.NORTH -> {
+            path.moveTo(center.x, center.y - size)
+            path.lineTo(center.x - size * 0.8f, center.y + size * 0.6f)
+            path.lineTo(center.x + size * 0.8f, center.y + size * 0.6f)
+        }
+    }
+    path.close()
+    drawPath(path, color)
+}
+
+// ---------- classic pieces ----------
 
 private fun DrawScope.drawAllStationaryPieces(
     gameState: GameState,
@@ -674,9 +396,7 @@ private fun DrawScope.drawAllStationaryPieces(
     cellSize: Float,
     selectablePieceIds: Set<Int>,
     activeHop: ActivePieceHopState?,
-    haloScale: Float,
-    palette: LudoBoardPalette,
-    pawnSkin: PawnSkin
+    selectPulse: Float
 ) {
     val allPieces = gameState.players.flatMap { player ->
         player.pieces
@@ -697,10 +417,9 @@ private fun DrawScope.drawAllStationaryPieces(
                 coord.second * cellSize + cellSize / 2f,
                 coord.first * cellSize + cellSize / 2f
             )
-
             val pieceCenter = if (count > 1) {
                 val clusterRadius = cellSize * 0.22f
-                val angle = (index.toDouble() / count.toDouble()) * (Math.PI * 2.0)
+                val angle = (index.toDouble() / count.toDouble()) * (PI * 2.0)
                 Offset(
                     (baseCenter.x + clusterRadius * cos(angle)).toFloat(),
                     (baseCenter.y + clusterRadius * sin(angle)).toFloat()
@@ -708,23 +427,14 @@ private fun DrawScope.drawAllStationaryPieces(
             } else {
                 baseCenter
             }
-
             val isSelectable = piece.color == gameState.activePlayer.color && piece.id in selectablePieceIds
             val pieceRadius = if (count > 1) cellSize * 0.28f else cellSize * 0.36f
-            val playerColor = when (player.color) {
-                PlayerColor.RED -> palette.red
-                PlayerColor.GREEN -> palette.green
-                PlayerColor.YELLOW -> palette.yellow
-                PlayerColor.BLUE -> palette.blue
-            }
-
-            drawSinglePiece(
+            drawClassicPiece(
                 center = pieceCenter,
                 radius = pieceRadius,
-                color = playerColor,
+                color = classicColor(player.color),
                 isSelectable = isSelectable,
-                haloScale = haloScale,
-                pawnSkin = pawnSkin
+                selectPulse = selectPulse
             )
         }
     }
@@ -733,9 +443,7 @@ private fun DrawScope.drawAllStationaryPieces(
 private fun DrawScope.drawHoppingPiece(
     hopState: ActivePieceHopState,
     stepProgress: Float,
-    cellSize: Float,
-    palette: LudoBoardPalette,
-    pawnSkin: PawnSkin
+    cellSize: Float
 ) {
     val stepFrom = hopState.steps.getOrNull(hopState.currentStepIndex) ?: return
     val stepTo = hopState.steps.getOrNull(hopState.currentStepIndex + 1) ?: stepFrom
@@ -753,320 +461,68 @@ private fun DrawScope.drawHoppingPiece(
         currentR * cellSize + cellSize / 2f
     )
 
-    // Parabolic vertical jump arc: max jump height at progress = 0.5
     val jumpArcHeight = if (isYardExit) cellSize * 0.85f else cellSize * 0.45f
     val jumpArc = -(sin(stepProgress * PI) * jumpArcHeight).toFloat()
     val animatedCenter = Offset(baseCenter.x, baseCenter.y + jumpArc)
 
-    // Scale bounce during jump
     val scale = 1.0f + (sin(stepProgress * PI) * (if (isYardExit) 0.35f else 0.22f)).toFloat()
-    val baseRadius = cellSize * 0.36f
-    val pieceRadius = baseRadius * scale
+    val pieceRadius = cellSize * 0.36f * scale
 
-    // Dynamic ground shadow directly under the hopping piece
-    val shadowAlpha = (0.45f * (1f - 0.35f * sin(stepProgress * PI))).toFloat()
-    val shadowRadius = (baseRadius * (1f - 0.2f * sin(stepProgress * PI))).toFloat()
+    val shadowAlpha = (0.3f * (1f - 0.35f * sin(stepProgress * PI))).toFloat()
     drawCircle(
         color = Color.Black.copy(alpha = shadowAlpha),
-        radius = shadowRadius,
+        radius = pieceRadius * 0.9f,
         center = Offset(baseCenter.x + 2f, baseCenter.y + 3f)
     )
-
-    val playerColor = when (hopState.playerColor) {
-        PlayerColor.RED -> palette.red
-        PlayerColor.GREEN -> palette.green
-        PlayerColor.YELLOW -> palette.yellow
-        PlayerColor.BLUE -> palette.blue
-    }
-
-    // Draw the elevated hopping piece
-    drawSinglePiece(
+    drawClassicPiece(
         center = animatedCenter,
         radius = pieceRadius,
-        color = playerColor,
+        color = classicColor(hopState.playerColor),
         isSelectable = false,
-        haloScale = 1f,
-        pawnSkin = pawnSkin
+        selectPulse = 1f
     )
 }
-private fun DrawScope.drawSinglePiece(
+
+private fun DrawScope.drawClassicPiece(
     center: Offset,
     radius: Float,
     color: Color,
     isSelectable: Boolean,
-    haloScale: Float,
-    pawnSkin: PawnSkin
+    selectPulse: Float
 ) {
-    // Glowing Selection Halo
     if (isSelectable) {
         drawCircle(
-            color = color.copy(alpha = 0.38f),
-            radius = radius * 1.55f * haloScale,
+            color = ClassicGold.copy(alpha = 0.28f),
+            radius = radius * 1.5f * selectPulse,
             center = center
         )
         drawCircle(
-            color = Color.White.copy(alpha = 0.9f),
-            radius = radius * 1.25f,
+            color = ClassicGold,
+            radius = radius * 1.28f * selectPulse,
             center = center,
-            style = Stroke(width = 2.5f)
+            style = Stroke(width = (radius * 0.14f).coerceAtLeast(2f))
         )
     }
-
-    // Drop Shadow
+    // Soft ground shadow
     drawCircle(
-        color = Color.Black.copy(alpha = 0.45f),
-        radius = radius * 1.05f,
-        center = Offset(center.x + 2f, center.y + 3f)
+        color = Color.Black.copy(alpha = 0.22f),
+        radius = radius,
+        center = Offset(center.x + 1.5f, center.y + 2.5f)
     )
-
-    when (pawnSkin) {
-        PawnSkin.MAP_PINS -> {
-            // Classic GPS Map Pin Marker (Matching Reference Screenshot Image #1)
-            val pinWidth = radius * 1.5f
-            val pinHeight = radius * 2.1f
-            val pinTopCenter = Offset(center.x, center.y - pinHeight * 0.22f)
-            val pinBottomPoint = Offset(center.x, center.y + pinHeight * 0.42f)
-
-            // 1. Textured Circular Base Disc (poker-chip style base)
-            val discRadius = radius * 0.82f
-            val discCenter = Offset(center.x, center.y + pinHeight * 0.34f)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(color, color.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.4f)),
-                    center = discCenter,
-                    radius = discRadius
-                ),
-                radius = discRadius,
-                center = discCenter
-            )
-            drawCircle(
-                color = Color.White,
-                radius = discRadius,
-                center = discCenter,
-                style = Stroke(width = 1.5f)
-            )
-            // White notched rim dashes around base
-            val notches = 6
-            for (i in 0 until notches) {
-                val angle = i * (2.0 * Math.PI / notches)
-                val nx = (discCenter.x + discRadius * 0.72f * cos(angle)).toFloat()
-                val ny = (discCenter.y + discRadius * 0.72f * sin(angle)).toFloat()
-                drawCircle(Color.White, radius * 0.14f, Offset(nx, ny))
-            }
-
-            // 2. White Map-Pin Teardrop Body
-            val pinPath = Path().apply {
-                val headRadius = pinWidth * 0.5f
-                // Top circle arc
-                moveTo(pinTopCenter.x, pinTopCenter.y - headRadius)
-                cubicTo(
-                    pinTopCenter.x + headRadius * 1.05f, pinTopCenter.y - headRadius,
-                    pinTopCenter.x + headRadius * 1.05f, pinTopCenter.y + headRadius * 0.4f,
-                    pinBottomPoint.x, pinBottomPoint.y
-                )
-                cubicTo(
-                    pinTopCenter.x - headRadius * 1.05f, pinTopCenter.y + headRadius * 0.4f,
-                    pinTopCenter.x - headRadius * 1.05f, pinTopCenter.y - headRadius,
-                    pinTopCenter.x, pinTopCenter.y - headRadius
-                )
-                close()
-            }
-
-            // Draw White glossy pin body
-            drawPath(
-                path = pinPath,
-                brush = Brush.verticalGradient(
-                    listOf(Color.White, Color(0xFFF1F5F9), Color(0xFFE2E8F0)),
-                    startY = pinTopCenter.y - pinWidth * 0.5f,
-                    endY = pinBottomPoint.y
-                )
-            )
-            // Pin body dark border outline
-            drawPath(
-                path = pinPath,
-                color = Color(0xFF263238),
-                style = Stroke(width = 2.2f)
-            )
-            // 3. Saturated Colored Inner Core Circle
-            val coreRadius = radius * 0.42f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(color.copy(alpha = 0.95f), color, Color.Black.copy(alpha = 0.25f)),
-                    center = Offset(pinTopCenter.x - coreRadius * 0.2f, pinTopCenter.y - coreRadius * 0.2f),
-                    radius = coreRadius * 1.2f
-                ),
-                radius = coreRadius,
-                center = pinTopCenter
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = 0.9f),
-                radius = coreRadius,
-                center = pinTopCenter,
-                style = Stroke(width = 1.2f)
-            )
-            // Specular shine dot
-            drawCircle(
-                color = Color.White,
-                radius = coreRadius * 0.28f,
-                center = Offset(pinTopCenter.x - coreRadius * 0.35f, pinTopCenter.y - coreRadius * 0.35f)
-            )
-        }
-        PawnSkin.CYBER_PIPS -> {
-            // Glass Neon Orb
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(color.copy(alpha = 0.95f), color, Color.Black.copy(alpha = 0.35f)),
-                    center = Offset(center.x - radius * 0.3f, center.y - radius * 0.3f),
-                    radius = radius * 1.2f
-                ),
-                radius = radius,
-                center = center
-            )
-            // Inner Specular Ring
-            drawCircle(
-                color = Color.White.copy(alpha = 0.65f),
-                radius = radius * 0.65f,
-                center = center,
-                style = Stroke(width = 2f)
-            )
-            // Glowing Core Pip
-            drawCircle(
-                color = Color.White,
-                radius = radius * 0.26f,
-                center = center
-            )
-        }
-        PawnSkin.ROYAL_CROWNS -> {
-            // Imperial 3D Crown
-            val goldLight = Color(0xFFFFE082)
-            val goldDark = Color(0xFFC79100)
-            // Golden base disc
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(goldLight, goldDark),
-                    center = Offset(center.x - radius * 0.2f, center.y - radius * 0.2f),
-                    radius = radius
-                ),
-                radius = radius,
-                center = center
-            )
-            // Colored velvet inset
-            drawCircle(
-                color = color,
-                radius = radius * 0.72f,
-                center = center
-            )
-            // Center Gold Crown Point
-            val crownPath = Path().apply {
-                moveTo(center.x - radius * 0.45f, center.y + radius * 0.3f)
-                lineTo(center.x - radius * 0.45f, center.y - radius * 0.25f)
-                lineTo(center.x - radius * 0.2f, center.y + radius * 0.05f)
-                lineTo(center.x, center.y - radius * 0.42f)
-                lineTo(center.x + radius * 0.2f, center.y + radius * 0.05f)
-                lineTo(center.x + radius * 0.45f, center.y - radius * 0.25f)
-                lineTo(center.x + radius * 0.45f, center.y + radius * 0.3f)
-                close()
-            }
-            drawPath(crownPath, goldLight)
-            drawPath(crownPath, Color(0xFF5D4037), style = Stroke(width = 1.2f))
-            // Center Crown Ruby
-            drawCircle(Color.White, radius * 0.16f, Offset(center.x, center.y + radius * 0.15f))
-        }
-        PawnSkin.CRYSTAL_GEMS -> {
-            // Faceted Hexagonal Gem
-            val hexPath = Path()
-            val points = 6
-            for (i in 0 until points) {
-                val angle = i * (2.0 * Math.PI / points) - Math.PI / 2.0
-                val x = (center.x + radius * cos(angle)).toFloat()
-                val y = (center.y + radius * sin(angle)).toFloat()
-                if (i == 0) hexPath.moveTo(x, y) else hexPath.lineTo(x, y)
-            }
-            hexPath.close()
-
-            drawPath(
-                hexPath,
-                brush = Brush.linearGradient(
-                    listOf(color.copy(alpha = 0.95f), color, Color.Black.copy(alpha = 0.4f)),
-                    start = Offset(center.x - radius, center.y - radius),
-                    end = Offset(center.x + radius, center.y + radius)
-                )
-            )
-            drawPath(hexPath, Color.White.copy(alpha = 0.85f), style = Stroke(width = 2f))
-
-            // Inner Gem Facets
-            val innerPath = Path()
-            for (i in 0 until points) {
-                val angle = i * (2.0 * Math.PI / points) - Math.PI / 2.0
-                val x = (center.x + radius * 0.5f * cos(angle)).toFloat()
-                val y = (center.y + radius * 0.5f * sin(angle)).toFloat()
-                if (i == 0) innerPath.moveTo(x, y) else innerPath.lineTo(x, y)
-            }
-            innerPath.close()
-            drawPath(innerPath, Color.White.copy(alpha = 0.4f), style = Stroke(width = 1.2f))
-            drawCircle(Color.White, radius * 0.2f, center)
-        }
-    }
-}
-
-private fun DrawScope.drawVisualParticles(
-    particles: List<BoardVisualParticle>,
-    cellSize: Float,
-    palette: LudoBoardPalette
-) {
-    particles.forEach { particle ->
-        val progress = particle.progress.value
-        if (particle.isShockwave) {
-            // Capture shockwave ripple
-            val center = Offset(
-                particle.center.x * cellSize + cellSize / 2f,
-                particle.center.y * cellSize + cellSize / 2f
-            )
-            val maxRadius = cellSize * 2.2f
-            val currentRadius = maxRadius * progress
-            val alpha = (1f - progress).coerceIn(0f, 1f)
-
-            drawCircle(
-                color = particle.color.copy(alpha = alpha * 0.35f),
-                radius = currentRadius,
-                center = center
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = alpha * 0.85f),
-                radius = currentRadius,
-                center = center,
-                style = Stroke(width = 3f * (1f - progress * 0.5f))
-            )
-        } else {
-            // Home Starburst Rays
-            val center = Offset(cellSize * 7.5f, cellSize * 7.5f)
-            val rayCount = 8
-            val maxLen = cellSize * 2.8f
-            val currentLen = maxLen * progress
-            val alpha = (1f - progress).coerceIn(0f, 1f)
-
-            for (i in 0 until rayCount) {
-                val angle = (i.toDouble() / rayCount) * (2.0 * Math.PI)
-                val startX = (center.x + cellSize * 0.6f * cos(angle)).toFloat()
-                val startY = (center.y + cellSize * 0.6f * sin(angle)).toFloat()
-                val endX = (center.x + (cellSize * 0.6f + currentLen) * cos(angle)).toFloat()
-                val endY = (center.y + (cellSize * 0.6f + currentLen) * sin(angle)).toFloat()
-
-                drawLine(
-                    color = palette.starSafeColor.copy(alpha = alpha),
-                    start = Offset(startX, startY),
-                    end = Offset(endX, endY),
-                    strokeWidth = 3.5f * (1f - progress * 0.5f)
-                )
-                // Sparkling spark head
-                drawCircle(
-                    color = Color.White.copy(alpha = alpha),
-                    radius = 3.5f * (1f - progress * 0.5f),
-                    center = Offset(endX, endY)
-                )
-            }
-        }
-    }
+    // Classic pawn: dark rim, solid disc, white ring, highlight dot.
+    drawCircle(color = darker(color), radius = radius, center = center)
+    drawCircle(color = color, radius = radius * 0.86f, center = center)
+    drawCircle(
+        color = Color.White,
+        radius = radius * 0.6f,
+        center = center,
+        style = Stroke(width = (radius * 0.13f).coerceAtLeast(1.5f))
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.9f),
+        radius = radius * 0.15f,
+        center = Offset(center.x - radius * 0.3f, center.y - radius * 0.32f)
+    )
 }
 
 private fun findTouchedPiece(
@@ -1105,10 +561,10 @@ private fun findTouchedPiece(
 
                 val pieceCenter = if (count > 1) {
                     val clusterRadius = cellSize * 0.22f
-                    val angle = (index.toDouble() / count.toDouble()) * (Math.PI * 2.0)
+                    val angle = (index.toDouble() / count.toDouble()) * (PI * 2.0)
                     Offset(
-                        (baseCenter.x + clusterRadius * kotlin.math.cos(angle)).toFloat(),
-                        (baseCenter.y + clusterRadius * kotlin.math.sin(angle)).toFloat()
+                        (baseCenter.x + clusterRadius * cos(angle)).toFloat(),
+                        (baseCenter.y + clusterRadius * sin(angle)).toFloat()
                     )
                 } else {
                     baseCenter

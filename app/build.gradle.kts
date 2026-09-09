@@ -17,8 +17,8 @@ android {
         applicationId = "com.neoludo.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.8.3"
+        versionCode = 13
+        versionName = "1.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -52,6 +52,10 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {

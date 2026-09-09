@@ -22,6 +22,12 @@ Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performa
 3. **Pass & Play (Local)**: 100% offline match for 2, 3, or 4 players on a single device screen with zero latency.
 4. **Vs Computer (AI)**: Solo play against 1–3 intelligent bots across 3 difficulty tiers (`Easy`, `Normal`, `Hard`).
 
+### 🎲 Classic Board — One Look for Everyone
+
+The board is a traditional Ludo layout (colored yards, star-marked safe
+squares, home stretches with arrows, center home triangles) with a classic
+ivory die — identical on every phone, no skins or themes to configure.
+
 ### 🌐 Online Play — Zero Setup (Free Public Relay)
 
 Private online rooms **just work after install — no account, no server, no config file.**

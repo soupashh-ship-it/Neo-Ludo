@@ -134,6 +134,15 @@ fun GameScreen(
     // Turn timer progress
     val timerProgress = remember { Animatable(1f) }
     var autoActedNotice by remember { mutableStateOf(false) }
+    // Last tap rejection ("not your turn", link hiccup) — shown briefly so
+    // taps never die silently.
+    var actionError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(actionError) {
+        if (actionError != null) {
+            delay(2500)
+            actionError = null
+        }
+    }
 
     // Listen to active turn changes to reset timer animation and handle AFK timeout
     LaunchedEffect(gameState?.activePlayerIndex, gameState?.diceState?.value, gameState?.turnPhase) {
@@ -316,6 +325,20 @@ fun GameScreen(
             )
             Spacer(modifier = Modifier.height(10.dp))
 
+            if (actionError != null) {
+                Text(
+                    text = actionError ?: "",
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
             // 2. Top Player Plates (Only for 3-4 Player Games)
             if (state.players.size > 2) {
                 Row(
@@ -360,7 +383,7 @@ fun GameScreen(
                         if (!isExecutingMove && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
                             scope.launch {
                                 isExecutingMove = true
-                                client.movePiece(pieceId)
+                                client.movePiece(pieceId).onFailure { actionError = it.message }
                                 delay(300)
                                 isExecutingMove = false
                             }
@@ -403,7 +426,7 @@ fun GameScreen(
                                 isRollingAnimation = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
                                 hapticController.perform(HapticType.MEDIUM_CLICK)
-                                client.rollDice()
+                                client.rollDice().onFailure { actionError = it.message }
                                 delay(300)
                                 isRollingAnimation = false
                             }
@@ -451,7 +474,7 @@ fun GameScreen(
                                 isRollingAnimation = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
                                 hapticController.perform(HapticType.MEDIUM_CLICK)
-                                client.rollDice()
+                                client.rollDice().onFailure { actionError = it.message }
                                 delay(300)
                                 isRollingAnimation = false
                             }
@@ -491,10 +514,8 @@ fun GameScreen(
 
         // In-Game Quick Settings Dialog
         if (showSettingsDialog) {
-            InGameQuickSettingsDialog(
-                currentTheme = boardTheme,
-                onThemeSelected = onUpdateTheme,
-                soundController = soundController,
+                InGameQuickSettingsDialog(
+                    soundController = soundController,
                 onSurrenderClick = {
                     showSettingsDialog = false
                     showSurrenderDialog = true
@@ -749,15 +770,13 @@ private fun TurnActionTray(
             )
         }
 
-        // 3D Animated Dice with Selected Skin
+        // Classic die — one look for everyone.
         val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
-        Dice3DRenderer(
-            diceState = state.diceState.copy(canRoll = canInteract),
-            playerColor = active.color,
-            isRolling = isRolling,
-            skin = diceSkin,
-            motionEnabled = motionEnabled,
-            onRollClick = { if (canInteract) onRollDice() },
+        ClassicDice(
+            value = state.diceState.value,
+            rolling = isRolling,
+            enabled = canInteract,
+            onClick = { if (canInteract) onRollDice() },
             sizeDp = 78.dp
         )
     }
@@ -845,13 +864,11 @@ private fun TwoPlayerArcadeBottomBar(
                     contentAlignment = Alignment.Center
                 ) {
                     val canInteract = !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
-                    Dice3DRenderer(
-                        diceState = state.diceState.copy(canRoll = canInteract),
-                        playerColor = state.activePlayer.color,
-                        isRolling = isRolling,
-                        skin = diceSkin,
-                        motionEnabled = motionEnabled,
-                        onRollClick = { if (canInteract) onRollDice() },
+                    ClassicDice(
+                        value = state.diceState.value,
+                        rolling = isRolling,
+                        enabled = canInteract,
+                        onClick = { if (canInteract) onRollDice() },
                         sizeDp = 64.dp
                     )
                 }
@@ -1071,8 +1088,6 @@ private fun FloatingEmoteBubble(event: ChatEvent) {
 }
 @Composable
 private fun InGameQuickSettingsDialog(
-    currentTheme: BoardTheme,
-    onThemeSelected: (BoardTheme) -> Unit,
     soundController: SoundController,
     onSurrenderClick: () -> Unit,
     onDismiss: () -> Unit
@@ -1091,43 +1106,6 @@ private fun InGameQuickSettingsDialog(
         },
         text = {
             Column {
-                Text(
-                    text = "BOARD THEME",
-                    color = NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BoardTheme.values().forEach { theme ->
-                        val isSelected = theme == currentTheme
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isSelected) NeoLudoColors.CobaltBlue.copy(alpha = 0.3f) else NeoLudoColors.ObsidianSurface)
-                                .border(
-                                    1.2.dp,
-                                    if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianBorder,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .clickable { onThemeSelected(theme) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = theme.displayName.split(" ").first(),
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 // Sound Effects Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),

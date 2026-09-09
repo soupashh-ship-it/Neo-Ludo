@@ -515,8 +515,12 @@ class MqttMultiplayerClient(
     // ---------- internals ----------
 
     private fun isLocalTurn(snap: RoomSnapshot, state: GameState): Boolean {
-        val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)
-        return state.activePlayer.id == currentUid || isHost
+        if (state.activePlayer.id == currentUid) return true
+        // Hosts cover bots / disconnected / missing seats — never a connected
+        // human's turn (otherwise the host could play the whole game alone).
+        if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) return false
+        val active = snap.players.find { it.id == state.activePlayer.id }
+        return active == null || active.isAi || !active.isConnected
     }
 
     private suspend fun ensureConnected(
@@ -671,6 +675,11 @@ class MqttMultiplayerClient(
                         relay.json.encodeToString(meta.copy(updatedAt = System.currentTimeMillis())),
                         retained = true
                     )
+                }
+                // Self-heal silent subscription loss: re-confirm every topic
+                // each beat (cheap, idempotent); recycle the link if refused.
+                if (!relay.refreshSubscriptions(maxAttempts = 2)) {
+                    handleLinkFailure()
                 }
             }
         }
@@ -847,8 +856,20 @@ class MqttMultiplayerClient(
     private suspend fun publishChat(code: String, chat: ChatEvent): Result<Unit> =
         relay.publish(MqttRelay.chatTopic(code), relay.json.encodeToString(chat))
 
-    private suspend fun postAction(roomId: String, action: NetworkAction): Result<Unit> =
-        relay.publish(MqttRelay.actionsTopic(roomId), relay.json.encodeToString(action))
+    private suspend fun postAction(roomId: String, action: NetworkAction): Result<Unit> {
+        val res = relay.publish(MqttRelay.actionsTopic(roomId), relay.json.encodeToString(action))
+        if (res.isFailure) handleLinkFailure()
+        return res
+    }
+}
+
+/**
+ * Host cover rule: the host may act for bots, disconnected players and
+ * seats missing from presence — but never for a connected human's turn.
+ */
+internal fun canHostCoverTurn(isHost: Boolean, activePresence: PlayerPresence?): Boolean {
+    if (!isHost) return false
+    return activePresence == null || activePresence.isAi || !activePresence.isConnected
 }
 
 /**
