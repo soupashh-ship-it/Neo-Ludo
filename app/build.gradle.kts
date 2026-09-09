@@ -17,8 +17,8 @@ android {
         applicationId = "com.neoludo.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.9.2"
+        versionCode = 16
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -90,7 +90,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.database.ktx)
     implementation(libs.firebase.auth.ktx)
-    implementation(libs.firebase.firestore.ktx)
 
     // Free public relay (MQTT) for zero-config online play
     implementation(libs.paho.mqttv3)

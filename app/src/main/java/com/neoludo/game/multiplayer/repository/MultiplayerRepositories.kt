@@ -27,6 +27,9 @@ class RoomRepository(
     suspend fun setFillBots(roomId: String, fillBots: Boolean): Result<Unit> =
         dataSource.setFillBots(roomId, fillBots)
 
+    suspend fun claimHost(roomId: String, uid: String, expectedEpoch: Long): Result<Long> =
+        dataSource.claimHost(roomId, uid, expectedEpoch)
+
     suspend fun leaveRoom(roomId: String, uid: String): Result<Unit> =
         dataSource.leaveRoom(roomId, uid)
 

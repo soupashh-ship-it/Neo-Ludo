@@ -79,7 +79,9 @@ class AuthoritativeGameProcessor(
         val initialState = LudoGameEngine.createInitialState(
             gameId = meta.roomId,
             playerConfigs = playerConfigs,
-            ruleSet = meta.ruleSet
+            ruleSet = meta.ruleSet,
+            authorityEpoch = meta.hostEpoch,
+            authorityHostId = meta.hostId
         )
 
         val now = System.currentTimeMillis()
@@ -121,9 +123,17 @@ class AuthoritativeGameProcessor(
             return null
         }
 
-        // Strict version fencing: replayed actions carrying a stale version are rejected.
-        // Clients send payload "" (no fencing, backward compat) or "v=<version>" for
-        // PASS_TURN idempotency across host migration. A mismatched v= is a replay — drop it.
+        // Every production action MUST be fenced to both the game revision and
+        // authority generation.  Old 1.9.x frames decode with -1 defaults, but
+        // accepting those after host migration would let a Firebase child replay
+        // (or a delayed MQTT packet) mutate a later turn.
+        if (action.expectedVersion < 0L || action.expectedHostEpoch < 1L) return null
+        if (action.expectedVersion != currentState.version) return null
+        if (action.expectedHostEpoch != currentMeta.hostEpoch) return null
+        if (currentState.authorityEpoch != currentMeta.hostEpoch) return null
+        if (currentState.authorityHostId != currentMeta.hostId) return null
+
+        // Backward compatibility with 1.9.x PASS_TURN messages which encoded v= in payload.
         action.payload.substringAfter("v=", "").substringBefore(";").toLongOrNull()?.let { expected ->
             if (expected != currentState.version) return null
         }
@@ -133,8 +143,9 @@ class AuthoritativeGameProcessor(
 
         return when (action.type) {
             ActionType.ROLL_DICE -> {
-                // Must be active player or host acting on behalf of bot/disconnected player
-                if (action.playerId != activePlayer.id && action.playerId != currentMeta.hostId) {
+                // The action always names the canonical active seat. Host proxying for a
+                // bot/disconnected seat still uses that seat id, never the host id.
+                if (action.playerId != activePlayer.id) {
                     return null
                 }
                 if (currentState.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
@@ -147,6 +158,7 @@ class AuthoritativeGameProcessor(
                     action.payload.substringBefore(";").toIntOrNull()?.takeIf { it in 1..6 }
                 } else null
                 val nextState = LudoGameEngine.rollDice(currentState, forcedValue = forcedVal)
+                if (nextState.version == currentState.version) return null
                 deduplicator.markProcessed(action.actionId, action.sequence, action.playerId)
 
                 val deadline = now + (currentMeta.ruleSet.turnTimerSeconds * 1000L)
@@ -204,7 +216,7 @@ class AuthoritativeGameProcessor(
             }
 
             ActionType.MOVE_PIECE -> {
-                if (action.playerId != activePlayer.id && action.playerId != currentMeta.hostId) {
+                if (action.playerId != activePlayer.id) {
                     return null
                 }
                 if (currentState.turnPhase != TurnPhase.WAITING_FOR_MOVE) {
@@ -212,12 +224,15 @@ class AuthoritativeGameProcessor(
                 }
 
                 val pieceId = action.payload.substringBefore(";").toIntOrNull() ?: return null
-                val piece = activePlayer.pieces.firstOrNull { it.id == pieceId } ?: return null
-                if (!MoveValidator.canPieceMove(piece, currentState.diceState.value)) {
+                // Validate against the full canonical rule calculation, including exact-home
+                // and capture/safe-cell semantics, not only distance arithmetic.
+                if (MoveValidator.getLegalMoves(activePlayer, currentState.diceState.value, currentState.players)
+                        .none { it.piece.id == pieceId }) {
                     return null
                 }
 
                 val nextState = LudoGameEngine.movePiece(currentState, pieceId)
+                if (nextState.version == currentState.version) return null
                 deduplicator.markProcessed(action.actionId, action.sequence, action.playerId)
 
                 val deadline = now + (currentMeta.ruleSet.turnTimerSeconds * 1000L)
@@ -288,7 +303,7 @@ class AuthoritativeGameProcessor(
             }
 
             ActionType.PASS_TURN -> {
-                if (action.playerId != activePlayer.id && action.playerId != currentMeta.hostId) {
+                if (action.playerId != activePlayer.id) {
                     return null
                 }
                 // Phase guard: PASS_TURN is only valid while waiting for a roll.
@@ -325,7 +340,10 @@ class AuthoritativeGameProcessor(
         currentMeta: RoomMetadata
     ): ProcessedActionResult? {
         if (currentState.isGameOver) return null
+        if (currentState.authorityEpoch != currentMeta.hostEpoch) return null
+        if (currentState.authorityHostId != currentMeta.hostId) return null
         val nextState = DisconnectAiProxy.executeProxyStep(currentState)
+        if (nextState.version == currentState.version) return null
         val now = System.currentTimeMillis()
         val deadline = now + (currentMeta.ruleSet.turnTimerSeconds * 1000L)
 

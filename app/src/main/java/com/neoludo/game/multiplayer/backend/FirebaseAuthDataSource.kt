@@ -6,7 +6,6 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import java.util.UUID
 
 class FirebaseAuthDataSource {
 
@@ -25,8 +24,9 @@ class FirebaseAuthDataSource {
     suspend fun ensureAuthenticated(fallbackUserId: String = ""): Result<String> = withContext(Dispatchers.IO) {
         val firebaseAuth = auth
         if (firebaseAuth == null) {
-            val id = fallbackUserId.ifBlank { "anon_" + UUID.randomUUID().toString().take(8) }
-            return@withContext Result.success(id)
+            return@withContext Result.failure(
+                IllegalStateException("Firebase Authentication is not configured")
+            )
         }
 
         try {
@@ -40,13 +40,14 @@ class FirebaseAuthDataSource {
             if (user != null) {
                 Result.success(user.uid)
             } else {
-                val fallbackId = fallbackUserId.ifBlank { "anon_" + UUID.randomUUID().toString().take(8) }
-                Result.success(fallbackId)
+                Result.failure(IllegalStateException("Firebase anonymous sign-in returned no user"))
             }
         } catch (e: Throwable) {
-            Log.e(tag, "Anonymous sign-in failed, using session id: ${e.message}")
-            val fallbackId = fallbackUserId.ifBlank { "anon_" + UUID.randomUUID().toString().take(8) }
-            Result.success(fallbackId)
+            // A local fallback id cannot satisfy RTDB rules that require
+            // auth.uid, so pretending authentication succeeded only turns a
+            // clear configuration problem into mysterious permission errors.
+            Log.e(tag, "Anonymous sign-in failed: ${e.message}")
+            Result.failure(e)
         }
     }
 

@@ -24,9 +24,11 @@ import com.neoludo.game.multiplayer.repository.ChatRepository
 import com.neoludo.game.multiplayer.repository.GameRepository
 import com.neoludo.game.multiplayer.repository.PresenceRepository
 import com.neoludo.game.multiplayer.repository.RoomRepository
+import com.neoludo.game.multiplayer.sync.ActionDeduplicator
 import com.neoludo.game.multiplayer.sync.AuthoritativeGameProcessor
 import com.neoludo.game.multiplayer.sync.HostElectionManager
 import com.neoludo.game.multiplayer.sync.ReconnectManager
+import com.neoludo.game.multiplayer.sync.ProtocolSafety
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,7 +74,7 @@ class FirebaseMultiplayerClient(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     // Seeded with epoch seconds (not 0): a rejoined app must not replay
     // from 0 and get its actions dropped as stale by the host deduplicator.
-    private val sequenceCounter = AtomicLong(System.currentTimeMillis() / 1000L)
+    private val sequenceCounter = AtomicLong(ActionDeduplicator.restartSafeSeed())
 
     private val roomRepo = RoomRepository(roomDataSource)
     private val actionRepo = ActionRepository(roomDataSource)
@@ -109,6 +111,8 @@ class FirebaseMultiplayerClient(
     private var activeEventsObserverJob: Job? = null
     private var botTurnJob: Job? = null
     private var timeoutJob: Job? = null
+    private var hostClaimJob: Job? = null
+    @Volatile private var joinedRoom: Boolean = false
 
     init {
         presenceRepo.observeConnected()
@@ -117,6 +121,12 @@ class FirebaseMultiplayerClient(
                 if (isConnected) {
                     reconnectManager.onConnected()
                     _connectionState.value = ConnectionState.CONNECTED
+                    // Firebase onDisconnect has just stamped our seat offline.
+                    // Re-assert presence (and register the next onDisconnect hook)
+                    // as soon as the RTDB socket comes back.
+                    if (joinedRoom && currentRoomId.isNotBlank() && currentUid.isNotBlank()) {
+                        presenceRepo.setConnected(currentRoomId, currentUid, true)
+                    }
                 } else {
                     reconnectManager.onDisconnected()
                     _connectionState.value = ConnectionState.RECONNECTING
@@ -131,45 +141,36 @@ class FirebaseMultiplayerClient(
         rules: LudoRuleSet
     ): Result<String> = withContext(Dispatchers.IO) {
         val authResult = authDataSource.ensureAuthenticated(localPlayerId)
-        val uid = authResult.getOrDefault(localPlayerId)
+        val uid = authResult.getOrElse { return@withContext Result.failure(RoomError.AuthenticationRequired) }
         currentUid = uid
 
-        val code = generateRoomCode()
-        currentRoomId = code
-
-        val meta = RoomMetadata(
-            roomId = code,
-            hostId = uid,
-            hostEpoch = 1L,
-            status = RoomStatus.LOBBY,
-            maxPlayers = playerCount.coerceIn(2, 4),
-            fillBots = fillBots,
-            ruleSet = rules,
-            createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis()
-        )
-
-        val hostPresence = PlayerPresence(
-            id = uid,
-            name = localPlayerName,
-            avatarId = localAvatarId,
-            color = preferredColor,
-            isHost = true,
-            isReady = true,
-            isConnected = true,
-            isAi = false,
-            joinedAt = System.currentTimeMillis(),
-            lastSeen = System.currentTimeMillis()
-        )
-
-        val result = roomRepo.createRoom(meta, hostPresence)
-        if (result.isSuccess) {
-            currentAssignedColor = preferredColor
-            attachRealtimeListeners(code)
-            Result.success(code)
-        } else {
-            Result.failure(result.exceptionOrNull() ?: RoomError.NetworkFailure("Failed to create room"))
+        repeat(5) {
+            val code = generateRoomCode()
+            val now = System.currentTimeMillis()
+            val meta = RoomMetadata(
+                roomId = code, hostId = uid, hostEpoch = 1L, status = RoomStatus.LOBBY,
+                maxPlayers = playerCount.coerceIn(2, 4), fillBots = fillBots, ruleSet = rules,
+                createdAt = now, updatedAt = now
+            )
+            val hostPresence = PlayerPresence(
+                id = uid, name = localPlayerName, avatarId = localAvatarId, color = preferredColor,
+                isHost = true, isReady = true, isConnected = true, isAi = false,
+                joinedAt = now, lastSeen = now
+            )
+            val result = roomRepo.createRoom(meta, hostPresence)
+            if (result.isSuccess) {
+                currentRoomId = code
+                currentAssignedColor = preferredColor
+                joinedRoom = true
+                attachRealtimeListeners(code)
+                return@withContext Result.success(code)
+            }
+            val message = result.exceptionOrNull()?.message.orEmpty()
+            if (!message.contains("collision", ignoreCase = true)) {
+                return@withContext Result.failure(result.exceptionOrNull() ?: RoomError.NetworkFailure("Failed to create room"))
+            }
         }
+        Result.failure(RoomError.NetworkFailure("Could not allocate a unique room code. Please retry."))
     }
 
     override suspend fun joinRoom(roomId: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -179,7 +180,7 @@ class FirebaseMultiplayerClient(
         }
 
         val authResult = authDataSource.ensureAuthenticated(localPlayerId)
-        val uid = authResult.getOrDefault(localPlayerId)
+        val uid = authResult.getOrElse { return@withContext Result.failure(RoomError.AuthenticationRequired) }
         currentUid = uid
         currentRoomId = cleanCode
 
@@ -200,6 +201,7 @@ class FirebaseMultiplayerClient(
         joinResult.fold(
             onSuccess = { assigned ->
                 currentAssignedColor = assigned.color
+                joinedRoom = true
                 attachRealtimeListeners(cleanCode)
                 Result.success(Unit)
             },
@@ -221,20 +223,22 @@ class FirebaseMultiplayerClient(
                 if (snapshot != null) {
                     val remoteGame = snapshot.gameState
                     val localGame = _gameState.value
-                    if (remoteGame != null) {
-                        // Strictly-greater accept: equal versions are already applied —
-                        // accepting >= caused same-version forks to flap indefinitely.
-                        if (localGame == null || remoteGame.version > localGame.version) {
+                    if (remoteGame != null && ProtocolSafety.isValidGameState(remoteGame, code, snapshot.meta.hostId)) {
+                        if (ProtocolSafety.isNewerState(localGame, remoteGame)) {
                             _gameState.value = remoteGame
                         }
                     } else if (snapshot.meta.status == RoomStatus.LOBBY) {
                         _gameState.value = null
                     }
 
-                    // Check if local player is authoritative host
-                    val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
-                    if (isHost && snapshot.meta.status == RoomStatus.IN_GAME && remoteGame != null) {
-                        triggerHostEvaluation(snapshot.meta, remoteGame)
+                    maybeClaimHost(snapshot)
+                    val canonical = _gameState.value
+                    if (snapshot.meta.hostId == currentUid && snapshot.meta.status == RoomStatus.IN_GAME && canonical != null) {
+                        if (canonical.authorityEpoch < snapshot.meta.hostEpoch) {
+                            adoptAuthority(snapshot.meta, canonical)
+                        } else if (canonical.authorityEpoch == snapshot.meta.hostEpoch && canonical.authorityHostId == snapshot.meta.hostId) {
+                            triggerHostEvaluation(snapshot.meta, canonical)
+                        }
                     }
                 }
             }
@@ -244,7 +248,8 @@ class FirebaseMultiplayerClient(
             .onEach { action ->
                 val snapshot = _roomState.value ?: return@onEach
                 val currentGameState = _gameState.value ?: snapshot.gameState ?: return@onEach
-                val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
+                val isHost = snapshot.meta.hostId == currentUid && currentGameState.authorityEpoch == snapshot.meta.hostEpoch &&
+                    currentGameState.authorityHostId == snapshot.meta.hostId
 
                 if (isHost) {
                     val processResult = authoritativeProcessor.processAction(action, currentGameState, snapshot.meta)
@@ -297,6 +302,8 @@ class FirebaseMultiplayerClient(
                                 type = ActionType.PASS_TURN,
                                 playerId = active.id,
                                 payload = "v=${state.version}",
+                                expectedVersion = state.version,
+                                expectedHostEpoch = meta.hostEpoch,
                                 timestamp = System.currentTimeMillis()
                             )
                             actionRepo.postAction(meta.roomId, action)
@@ -318,7 +325,9 @@ class FirebaseMultiplayerClient(
             if (!isActive) return@launch
             val latestState = _gameState.value ?: return@launch
             val latestSnapshot = _roomState.value ?: return@launch
-            if (latestState.activePlayerIndex == state.activePlayerIndex && latestState.version == state.version && !latestState.isGameOver) {
+            if (latestState.activePlayerIndex == state.activePlayerIndex && latestState.version == state.version &&
+                latestState.authorityEpoch == latestSnapshot.meta.hostEpoch &&
+                latestState.authorityHostId == latestSnapshot.meta.hostId && !latestState.isGameOver) {
                 log("Turn deadline elapsed for player ${active.name}, executing timeout step")
                 val timeoutResult = authoritativeProcessor.processTimeout(latestState, latestSnapshot.meta)
                 if (timeoutResult != null) {
@@ -332,24 +341,60 @@ class FirebaseMultiplayerClient(
         }
     }
 
+    private fun maybeClaimHost(snapshot: RoomSnapshot) {
+        if (snapshot.meta.status == RoomStatus.COMPLETED || snapshot.meta.status == RoomStatus.ABANDONED) return
+        if (snapshot.meta.hostId == currentUid) return
+        if (hostElectionManager.determineCurrentHost(snapshot.meta, snapshot.players) != currentUid) return
+        if (hostClaimJob?.isActive == true) return
+        val expectedEpoch = snapshot.meta.hostEpoch
+        hostClaimJob = scope.launch {
+            delay(750L)
+            val latest = _roomState.value ?: return@launch
+            if (latest.meta.hostEpoch != expectedEpoch || latest.meta.hostId == currentUid) return@launch
+            if (hostElectionManager.determineCurrentHost(latest.meta, latest.players) != currentUid) return@launch
+            roomRepo.claimHost(latest.meta.roomId, currentUid, expectedEpoch)
+        }
+    }
+
+    private fun adoptAuthority(meta: RoomMetadata, state: GameState) {
+        if (meta.hostId != currentUid || state.authorityEpoch >= meta.hostEpoch) return
+        scope.launch {
+            val latest = _gameState.value ?: return@launch
+            if (latest.authorityEpoch >= meta.hostEpoch) return@launch
+            val adopted = latest.copy(authorityEpoch = meta.hostEpoch, authorityHostId = meta.hostId)
+            _gameState.value = adopted
+            val result = gameRepo.publishGameState(meta.roomId, adopted, null)
+            if (result.isSuccess) triggerHostEvaluation(meta, adopted)
+        }
+    }
+
     override suspend fun setReady(isReady: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        if (snapshot.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
         presenceRepo.setReady(snapshot.meta.roomId, currentUid, isReady)
     }
 
     override suspend fun setFillBots(fillBots: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        if (snapshot.meta.hostId != currentUid) return@withContext Result.failure(RoomError.NotHost)
+        if (snapshot.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
         roomRepo.setFillBots(snapshot.meta.roomId, fillBots)
     }
 
     override suspend fun startMatch(): Result<Unit> = withContext(Dispatchers.IO) {
         val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
-        if (!isHost) {
-            return@withContext Result.failure(RoomError.NotHost)
+        if (snapshot.meta.hostId != currentUid) return@withContext Result.failure(RoomError.NotHost)
+        if (snapshot.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val connectedHumans = snapshot.players.filter { !it.isAi && it.isConnected }
+        if (connectedHumans.any { !it.isReady }) return@withContext Result.failure(RoomError.PlayersNotReady)
+        if (!snapshot.meta.fillBots && connectedHumans.size != snapshot.meta.maxPlayers) {
+            return@withContext Result.failure(RoomError.NetworkFailure("Waiting for ${snapshot.meta.maxPlayers} connected players."))
+        }
+        if (snapshot.meta.fillBots && connectedHumans.isEmpty()) {
+            return@withContext Result.failure(RoomError.NetworkFailure("At least one connected player is required."))
         }
 
-        val players = sanitizePlayersForStart(snapshot.players)
+        val players = sanitizePlayersForStart(connectedHumans, allowSingle = snapshot.meta.fillBots)
             ?: return@withContext Result.failure(
                 RoomError.NetworkFailure("Need 2 to 4 players with different colors to start. Wait for everyone to join and retry.")
             )
@@ -382,7 +427,7 @@ class FirebaseMultiplayerClient(
         )
         val active = state.activePlayer
 
-        val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
+        val isHost = snapshot.meta.hostId == currentUid
         if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
             return@withContext Result.failure(RoomError.NotYourTurn)
         }
@@ -393,6 +438,8 @@ class FirebaseMultiplayerClient(
             type = ActionType.ROLL_DICE,
             playerId = active.id,
             payload = "",
+            expectedVersion = state.version,
+            expectedHostEpoch = snapshot.meta.hostEpoch,
             timestamp = System.currentTimeMillis()
         )
 
@@ -406,7 +453,7 @@ class FirebaseMultiplayerClient(
         )
         val active = state.activePlayer
 
-        val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
+        val isHost = snapshot.meta.hostId == currentUid
         if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
             return@withContext Result.failure(RoomError.NotYourTurn)
         }
@@ -417,6 +464,8 @@ class FirebaseMultiplayerClient(
             type = ActionType.MOVE_PIECE,
             playerId = active.id,
             payload = pieceId.toString(),
+            expectedVersion = state.version,
+            expectedHostEpoch = snapshot.meta.hostEpoch,
             timestamp = System.currentTimeMillis()
         )
 
@@ -455,8 +504,16 @@ class FirebaseMultiplayerClient(
     }
 
     override suspend fun leaveRoom(): Result<Unit> = withContext(Dispatchers.IO) {
+        joinedRoom = false
         val snapshot = _roomState.value
         if (snapshot != null) {
+            val otherConnectedHumans = snapshot.players.any {
+                it.id != currentUid && !it.isAi && it.isConnected
+            }
+            if (snapshot.meta.hostId == currentUid && !otherConnectedHumans &&
+                snapshot.meta.status != RoomStatus.COMPLETED && snapshot.meta.status != RoomStatus.ABANDONED) {
+                roomRepo.updateRoomStatus(snapshot.meta.roomId, RoomStatus.ABANDONED)
+            }
             roomRepo.leaveRoom(snapshot.meta.roomId, currentUid)
         }
         release()
@@ -472,24 +529,30 @@ class FirebaseMultiplayerClient(
     }
 
     override fun release() {
+        joinedRoom = false
+        val roomIdToLeave = _roomState.value?.meta?.roomId
+        val uidToLeave = currentUid
         botTurnJob?.cancel()
         timeoutJob?.cancel()
+        hostClaimJob?.cancel()
         activeRoomObserverJob?.cancel()
         activeActionsObserverJob?.cancel()
         activeChatObserverJob?.cancel()
         activeEventsObserverJob?.cancel()
+        // A composition can disappear without the explicit "Leave" button
+        // (process/navigation edge cases). Mark the seat disconnected so the
+        // next authority can safely proxy/elect instead of waiting on a ghost.
+        if (roomIdToLeave != null && uidToLeave.isNotBlank()) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                presenceRepo.setConnected(roomIdToLeave, uidToLeave, false)
+            }
+        }
         scope.cancel()
     }
 
     companion object {
-        private val CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-        fun generateRoomCode(): String {
-            val randomPart = (1..6)
-                .map { CODE_CHARS.random() }
-                .joinToString("")
-            return "NL-$randomPart"
-        }
+        fun generateRoomCode(): String =
+            com.neoludo.game.multiplayer.backend.MqttRelay.generateRoomCode()
 
         // Single hardened implementation (chat-app paste junk, full shared
         // messages) lives on the relay; Firebase rooms share the code format.

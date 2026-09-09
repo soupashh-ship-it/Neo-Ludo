@@ -1,6 +1,7 @@
 package com.neoludo.game.ui.room
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -82,13 +83,25 @@ fun LobbyWaitingRoomScreen(
     val maxPlayers = meta?.maxPlayers ?: 4
 
     val self = presences.find { it.id == client.currentUid || it.id == localPlayerId }
-    val isHost = meta?.hostId == client.currentUid || self?.isHost == true
+    val isHost = meta?.hostId == client.currentUid
     val isSelfReady = self?.isReady ?: true
 
     var isStarting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var copiedCodeToast by remember { mutableStateOf(false) }
     var isRetrying by remember { mutableStateOf(false) }
+    var isLeaving by remember { mutableStateOf(false) }
+
+    val leaveAndBack: () -> Unit = {
+        if (!isLeaving) {
+            isLeaving = true
+            scope.launch {
+                client.leaveRoom()
+                onBack()
+            }
+        }
+    }
+    BackHandler { leaveAndBack() }
 
     // Auto-navigate to game when match starts on ANY connected device
     LaunchedEffect(roomState?.meta?.status, roomState?.gameState) {
@@ -115,10 +128,8 @@ fun LobbyWaitingRoomScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 IconButton(
-                    onClick = {
-                        scope.launch { client.leaveRoom() }
-                        onBack()
-                    },
+                    onClick = leaveAndBack,
+                    enabled = !isLeaving,
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
@@ -346,7 +357,8 @@ fun LobbyWaitingRoomScreen(
                 presences.forEach { player ->
                     LobbyPlayerCard(
                         player = player,
-                        isLocal = player.id == client.currentUid || player.id == localPlayerId
+                        isLocal = player.id == client.currentUid || player.id == localPlayerId,
+                        isHost = player.id == meta?.hostId
                     )
                 }
 
@@ -395,7 +407,13 @@ fun LobbyWaitingRoomScreen(
 
             // Bottom Action
             if (isHost) {
-                val canStart = presences.size >= 2 || (meta?.fillBots == true && presences.isNotEmpty())
+                val connected = presences.filter { it.isConnected && !it.isAi }
+                val allReady = connected.all { it.isReady }
+                val canStart = if (meta?.fillBots == true) {
+                    connected.isNotEmpty() && allReady
+                } else {
+                    connected.size == maxPlayers && allReady
+                }
                 if (isStarting) {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = NeoLudoColors.EmeraldGreen)
@@ -440,6 +458,7 @@ fun LobbyWaitingRoomScreen(
 fun LobbyPlayerCard(
     player: PlayerPresence,
     isLocal: Boolean,
+    isHost: Boolean = player.isHost,
     modifier: Modifier = Modifier
 ) {
     val playerColor = when (player.color) {
@@ -489,7 +508,7 @@ fun LobbyPlayerCard(
                             fontSize = 15.sp,
                             color = Color.White
                         )
-                        if (player.isHost) {
+                        if (isHost) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),

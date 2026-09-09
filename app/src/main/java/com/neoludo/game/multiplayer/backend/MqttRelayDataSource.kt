@@ -20,6 +20,7 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import java.util.UUID
+import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -95,14 +96,38 @@ object MqttRelay {
         else SERVERS
     }
 
+    /**
+     * TLS and TCP endpoints for the same hostname share one broker network.
+     * Once a room has been located, reconnects may switch protocol/port on
+     * that network, but MUST NOT fall through to a different broker network
+     * (that would create a split-brain room with the same code).
+     */
+    fun sameNetworkServers(prefer: String): List<String> {
+        val host = when {
+            prefer.contains("hivemq", ignoreCase = true) -> "hivemq"
+            prefer.contains("emqx", ignoreCase = true) -> "emqx"
+            else -> return listOf(prefer).filter { it in SERVERS }
+        }
+        return listOf(prefer) + SERVERS.filter { it != prefer && it.contains(host, ignoreCase = true) }
+    }
+
+    fun isSameNetwork(a: String?, b: String?): Boolean {
+        if (a == null || b == null) return false
+        return (a.contains("hivemq", true) && b.contains("hivemq", true)) ||
+            (a.contains("emqx", true) && b.contains("emqx", true))
+    }
+
     const val CONNECT_TIMEOUT_SEC = 10
     const val KEEP_ALIVE_SEC = 30
 
     private val CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     private val CODE_REGEX = Regex("^NL-[A-Z0-9]{6}$")
+    private val secureRandom = SecureRandom()
 
-    fun generateRoomCode(): String =
-        "NL-" + (1..6).map { CODE_CHARS.random() }.joinToString("")
+    fun generateRoomCode(): String = buildString(9) {
+        append("NL-")
+        repeat(6) { append(CODE_CHARS[secureRandom.nextInt(CODE_CHARS.length)]) }
+    }
 
     /**
      * Aggressively recovers the code from chat-app paste junk: formatting
@@ -183,11 +208,23 @@ class MqttRelayDataSource {
         clientId: String,
         willTopic: String? = null,
         willPayload: String? = null,
-        preferServer: String? = null
+        preferServer: String? = null,
+        restrictToPreferredNetwork: Boolean = false
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        if (isConnected()) return@withContext Result.success(Unit)
+        if (isConnected()) {
+            if (!restrictToPreferredNetwork || preferServer == null ||
+                MqttRelay.isSameNetwork(connectedServer, preferServer)) {
+                return@withContext Result.success(Unit)
+            }
+            disconnect()
+        }
         var lastError: Throwable? = null
-        for (uri in MqttRelay.orderedServers(preferServer)) {
+        val candidates = if (restrictToPreferredNetwork && preferServer != null) {
+            MqttRelay.sameNetworkServers(preferServer)
+        } else {
+            MqttRelay.orderedServers(preferServer)
+        }
+        for (uri in candidates) {
             try {
                 val c = MqttClient(uri, clientId, MemoryPersistence())
                 c.setCallback(relayCallback)
@@ -218,6 +255,7 @@ class MqttRelayDataSource {
                 } catch (_: Throwable) {
                 }
                 client = null
+                connectedServer = null
             }
         }
         Result.failure(lastError ?: IllegalStateException("No relay reachable"))

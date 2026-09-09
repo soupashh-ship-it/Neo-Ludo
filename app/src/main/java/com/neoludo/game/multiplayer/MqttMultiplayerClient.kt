@@ -20,9 +20,11 @@ import com.neoludo.game.multiplayer.model.RoomError
 import com.neoludo.game.multiplayer.model.RoomMetadata
 import com.neoludo.game.multiplayer.model.RoomSnapshot
 import com.neoludo.game.multiplayer.model.RoomStatus
+import com.neoludo.game.multiplayer.sync.ActionDeduplicator
 import com.neoludo.game.multiplayer.sync.AuthoritativeGameProcessor
 import com.neoludo.game.multiplayer.sync.HostElectionManager
 import com.neoludo.game.multiplayer.sync.ReconnectManager
+import com.neoludo.game.multiplayer.sync.ProtocolSafety
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,7 +81,7 @@ class MqttMultiplayerClient(
     // Seeded with epoch seconds (not 0): if the app restarts mid-game and
     // rejoins, its actions must NOT look older than pre-restart ones, or the
     // host's deduplicator drops every tap as stale.
-    private val sequenceCounter = AtomicLong(System.currentTimeMillis() / 1000L)
+    private val sequenceCounter = AtomicLong(ActionDeduplicator.restartSafeSeed())
 
     private val hostElectionManager = HostElectionManager()
     private val authoritativeProcessor = AuthoritativeGameProcessor()
@@ -116,6 +118,7 @@ class MqttMultiplayerClient(
     private var timeoutJob: Job? = null
     private var heartbeatJob: Job? = null
     private var retryJob: Job? = null
+    private var hostClaimJob: Job? = null
     private var joinedCode: String? = null
     /**
      * Broker network this room lives on. Reconnects always return here —
@@ -151,22 +154,20 @@ class MqttMultiplayerClient(
         var attempts = 0
         while (attempts < 4) {
             val existing = relay.awaitRetained(MqttRelay.metaTopic(code), 2000L)
-            if (existing == null || isReusableMeta(existing)) break
+            // Never recycle a retained code. Old player/state retained topics
+            // can outlive meta and resurrect a previous match under the same
+            // short code. The code space is large enough to simply retry.
+            if (existing == null) break
             code = MqttRelay.generateRoomCode()
             attempts++
         }
         // Final check on the chosen code.
         val existing = relay.awaitRetained(MqttRelay.metaTopic(code), 2000L)
-        if (existing != null && !isReusableMeta(existing)) {
+        if (existing != null) {
             return@withContext Result.failure(RoomError.NetworkFailure("Room code collision, try again"))
         }
         currentRoomId = code
         currentAssignedColor = preferredColor
-        // Reconnect with the crash-detection will registered for this room.
-        val willConn = ensureConnectedWithWill(code)
-        if (willConn.isFailure) return@withContext Result.failure(willConn.exceptionOrNull()!!)
-        _connectionState.value = ConnectionState.CONNECTED
-
         val now = System.currentTimeMillis()
         val meta = RoomMetadata(
             roomId = code,
@@ -191,6 +192,11 @@ class MqttMultiplayerClient(
             joinedAt = now,
             lastSeen = now
         )
+        // Register a Last-Will that preserves this seat's stable join/ready/host fields.
+        val willConn = ensureConnectedWithWill(code, hostPresence)
+        if (willConn.isFailure) return@withContext Result.failure(willConn.exceptionOrNull()!!)
+        _connectionState.value = ConnectionState.CONNECTED
+
         val metaPub = relay.publish(MqttRelay.metaTopic(code), relay.json.encodeToString(meta), retained = true)
         val presencePub = relay.publish(
             MqttRelay.presenceTopic(code, currentUid),
@@ -232,8 +238,8 @@ class MqttMultiplayerClient(
 
         // The room may live on a different broker network than our default —
         // scan all of them (the hit pins that server for the rest of the room).
-        val rawMeta = when (val lookup = relay.fetchRetainedFromAny(MqttRelay.metaTopic(code))) {
-            is RelayLookup.Found -> lookup.payload
+        val found = when (val lookup = relay.fetchRetainedFromAny(MqttRelay.metaTopic(code))) {
+            is RelayLookup.Found -> lookup
             is RelayLookup.NotFound -> return@withContext Result.failure(
                 if (!lookup.relayReached) {
                     RoomError.NetworkFailure(
@@ -247,18 +253,33 @@ class MqttMultiplayerClient(
                 }
             )
         }
-        // The probe pinned the room's server; all subsequent connects stay there.
-        roomServer = MqttRelay.pinnedServer
+        val rawMeta = found.payload
+        // The probe may have found the room on a different broker network than
+        // our initial socket. Move the live client to THAT network before
+        // reading presence/state; otherwise room-full/color checks use the
+        // wrong roster and two peers can silently split into different rooms.
+        roomServer = found.server
+        if (!MqttRelay.isSameNetwork(relay.connectedServer(), roomServer)) {
+            relay.disconnect()
+            val pinned = relay.connect(
+                MqttRelayDataSource.newClientId(currentUid),
+                preferServer = roomServer,
+                restrictToPreferredNetwork = true
+            )
+            if (pinned.isFailure) {
+                return@withContext Result.failure(
+                    RoomError.NetworkFailure("Found the room, but could not connect to its relay. Retry in a moment.")
+                )
+            }
+            roomServer = relay.connectedServer()
+        }
         val meta = runCatching { relay.json.decodeFromString<RoomMetadata>(rawMeta) }.getOrNull()
             ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        if (!ProtocolSafety.isValidMeta(meta, code)) return@withContext Result.failure(RoomError.RoomNotFound)
         if (isReusableMeta(rawMeta)) {
             return@withContext Result.failure(RoomError.RoomNotFound)
         }
-        if (meta.status != RoomStatus.LOBBY) {
-            return@withContext Result.failure(RoomError.GameAlreadyStarted)
-        }
         currentRoomId = code
-        attachListeners(code)
 
         // Seed players from retained presence docs. A room always holds its
         // host, so an empty result means our window missed the retained docs
@@ -271,6 +292,12 @@ class MqttMultiplayerClient(
         // live device owns it — mint a fresh id instead of stealing the seat.
         currentUid = JoinUidResolver.resolve(currentUid, known, now)
         val existing = known[currentUid]
+        // A new player may only enter during the lobby. An existing logical
+        // player is allowed to reclaim their retained seat during IN_GAME so
+        // process death/background-kill can recover from the canonical state.
+        if (meta.status != RoomStatus.LOBBY && existing == null) {
+            return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        }
         val assigned: PlayerPresence
         if (existing != null) {
             // Rejoining our own seat.
@@ -302,7 +329,7 @@ class MqttMultiplayerClient(
             currentAssignedColor = color
         }
         // Reconnect with the crash-detection will registered for this room.
-        val willConn = ensureConnectedWithWill(code)
+        val willConn = ensureConnectedWithWill(code, assigned)
         if (willConn.isFailure) return@withContext Result.failure(willConn.exceptionOrNull()!!)
         _connectionState.value = ConnectionState.CONNECTED
         attachListeners(code)
@@ -323,11 +350,43 @@ class MqttMultiplayerClient(
             latestPlayers[currentUid] = assigned
             publishSnapshotLocked()
         }
+
+        // Public MQTT brokers cannot atomically reserve the last room slot.
+        // Stabilize the retained roster after announcing ourselves and let
+        // every racing joiner make the same deterministic admission choice.
+        // This guarantees that at most maxPlayers live human seats survive,
+        // even when two phones join the fourth slot at the same instant.
+        if (existing == null) {
+            val settled = fetchPlayers(code)
+            val admittedIds = selectAdmittedPlayerIds(settled.values, meta.maxPlayers, System.currentTimeMillis())
+            if (currentUid !in admittedIds) {
+                val rejected = assigned.copy(isConnected = false, lastSeen = System.currentTimeMillis())
+                relay.publish(
+                    MqttRelay.presenceTopic(code, currentUid),
+                    relay.json.encodeToString(rejected),
+                    retained = true
+                )
+                synchronized(snapshotLock) {
+                    latestPlayers[currentUid] = rejected
+                    publishSnapshotLocked()
+                }
+                release()
+                return@withContext Result.failure(RoomError.RoomFull)
+            }
+            synchronized(snapshotLock) {
+                latestPlayers.putAll(settled)
+                latestPlayers[currentUid] = assigned
+                publishSnapshotLocked()
+            }
+        }
+
         // Pull the latest retained state snapshot, if the match already has one.
         relay.awaitRetained(MqttRelay.stateTopic(code), 2500L)?.let { raw ->
             runCatching { relay.json.decodeFromString<GameState>(raw) }.getOrNull()?.let { game ->
-                _gameState.value = game
-                synchronized(snapshotLock) { publishSnapshotLocked() }
+                if (ProtocolSafety.isValidGameState(game, code, meta.hostId) && ProtocolSafety.isNewerState(_gameState.value, game)) {
+                    _gameState.value = game
+                    synchronized(snapshotLock) { publishSnapshotLocked() }
+                }
             }
         }
         Result.success(Unit)
@@ -335,32 +394,39 @@ class MqttMultiplayerClient(
 
     override suspend fun setReady(isReady: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         val code = joinedCode ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        val snap = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
+        if (snap.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
         val self = synchronized(snapshotLock) { latestPlayers[currentUid] }
             ?: return@withContext Result.failure(RoomError.RoomNotFound)
         relay.publish(
             MqttRelay.presenceTopic(code, currentUid),
             relay.json.encodeToString(self.copy(isReady = isReady, lastSeen = System.currentTimeMillis())),
             retained = true
-        )
-        Result.success(Unit)
+        ).map { Unit }
     }
 
     override suspend fun setFillBots(fillBots: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         val snap = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) {
-            return@withContext Result.failure(RoomError.NotHost)
-        }
+        if (snap.meta.hostId != currentUid) return@withContext Result.failure(RoomError.NotHost)
+        if (snap.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
         publishMeta(snap.meta.copy(fillBots = fillBots, updatedAt = System.currentTimeMillis()))
     }
 
     override suspend fun startMatch(): Result<Unit> = withContext(Dispatchers.IO) {
         val snap = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) {
-            return@withContext Result.failure(RoomError.NotHost)
+        if (snap.meta.hostId != currentUid) return@withContext Result.failure(RoomError.NotHost)
+        if (snap.meta.status != RoomStatus.LOBBY) return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val liveHumans = snap.players.filter { !it.isAi && it.isConnected }
+        if (liveHumans.any { !it.isReady }) return@withContext Result.failure(RoomError.PlayersNotReady)
+        if (!snap.meta.fillBots && liveHumans.size != snap.meta.maxPlayers) {
+            return@withContext Result.failure(RoomError.NetworkFailure("Waiting for ${snap.meta.maxPlayers} connected players."))
+        }
+        if (snap.meta.fillBots && liveHumans.isEmpty()) {
+            return@withContext Result.failure(RoomError.NetworkFailure("At least one connected player is required."))
         }
         // Never throw out of here (a throw from the tap handler crashes the
         // app): sanitize the roster and convert violations into lobby errors.
-        val players = sanitizePlayersForStart(snap.players)
+        val players = sanitizePlayersForStart(liveHumans, allowSingle = snap.meta.fillBots)
             ?: return@withContext Result.failure(
                 RoomError.NetworkFailure(
                     "Need 2 to 4 players with different colors to start. " +
@@ -385,8 +451,13 @@ class MqttMultiplayerClient(
             }
         }
         _gameState.value = initResult.updatedState
-        publishMeta(initResult.updatedMeta ?: snap.meta)
-        publishState(initResult.updatedState)
+        // State first, lifecycle meta second. If a relay hiccups between the
+        // two, peers stay in the lobby rather than entering IN_GAME without a
+        // recoverable canonical state snapshot.
+        val stateResult = publishState(initResult.updatedState)
+        if (stateResult.isFailure) return@withContext stateResult
+        val metaResult = publishMeta(initResult.updatedMeta ?: snap.meta)
+        if (metaResult.isFailure) return@withContext metaResult
         initResult.events.forEach { publishEvent(it) }
         Result.success(Unit)
     }
@@ -407,6 +478,8 @@ class MqttMultiplayerClient(
                 type = ActionType.ROLL_DICE,
                 playerId = state.activePlayer.id,
                 payload = "",
+                expectedVersion = state.version,
+                expectedHostEpoch = snap.meta.hostEpoch,
                 timestamp = System.currentTimeMillis()
             )
         )
@@ -426,6 +499,8 @@ class MqttMultiplayerClient(
                 type = ActionType.MOVE_PIECE,
                 playerId = state.activePlayer.id,
                 payload = pieceId.toString(),
+                expectedVersion = state.version,
+                expectedHostEpoch = snap.meta.hostEpoch,
                 timestamp = System.currentTimeMillis()
             )
         )
@@ -469,11 +544,26 @@ class MqttMultiplayerClient(
     override suspend fun leaveRoom(): Result<Unit> = withContext(Dispatchers.IO) {
         val code = joinedCode
         if (code != null) {
-            val self = synchronized(snapshotLock) { latestPlayers[currentUid] }
+            val now = System.currentTimeMillis()
+            val (meta, players, self) = synchronized(snapshotLock) {
+                Triple(latestMeta, latestPlayers.values.toList(), latestPlayers[currentUid])
+            }
+            // Leave a durable tombstone when the host is the last live human.
+            // This prevents stale retained player/state records from making an
+            // abandoned room look joinable later, while keeping the short code
+            // permanently collision-safe on public brokers.
+            val otherLiveHumans = players.filter {
+                it.id != currentUid && !it.isAi && isSeatLive(it, now)
+            }
+            if (meta != null && meta.hostId == currentUid && otherLiveHumans.isEmpty() &&
+                meta.status != RoomStatus.COMPLETED && meta.status != RoomStatus.ABANDONED) {
+                publishMeta(meta.copy(status = RoomStatus.ABANDONED, updatedAt = now))
+                relay.clearRetained(MqttRelay.stateTopic(code))
+            }
             if (self != null) {
                 relay.publish(
                     MqttRelay.presenceTopic(code, currentUid),
-                    relay.json.encodeToString(self.copy(isConnected = false, lastSeen = System.currentTimeMillis())),
+                    relay.json.encodeToString(self.copy(isConnected = false, lastSeen = now)),
                     retained = true
                 )
             }
@@ -492,7 +582,8 @@ class MqttMultiplayerClient(
             MqttRelayDataSource.newClientId(currentUid.ifBlank { localPlayerId }),
             will.first,
             will.second,
-            preferServer = roomServer
+            preferServer = roomServer,
+            restrictToPreferredNetwork = roomServer != null
         )
         if (res.isFailure) {
             _connectionState.value = ConnectionState.RECONNECTING
@@ -510,15 +601,32 @@ class MqttMultiplayerClient(
     }
 
     override fun release() {
+        val codeToLeave = joinedCode
+        val selfToLeave = synchronized(snapshotLock) { latestPlayers[currentUid] }
         botTurnJob?.cancel()
         timeoutJob?.cancel()
         heartbeatJob?.cancel()
         retryJob?.cancel()
+        hostClaimJob?.cancel()
         listenerJobs.forEach { it.cancel() }
         listenerJobs = emptyList()
         joinedCode = null
         roomServer = null
-        scope.launch { relay.disconnect() }
+        // Do not launch cleanup into the scope cancelled on the next line.
+        // On a clean MQTT disconnect the broker does NOT publish our Last-Will,
+        // so explicitly stamp the retained seat offline first.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            if (codeToLeave != null && selfToLeave != null && relay.isConnected()) {
+                relay.publish(
+                    MqttRelay.presenceTopic(codeToLeave, currentUid),
+                    relay.json.encodeToString(
+                        selfToLeave.copy(isConnected = false, lastSeen = System.currentTimeMillis())
+                    ),
+                    retained = true
+                )
+            }
+            relay.disconnect()
+        }
         scope.cancel()
     }
 
@@ -528,7 +636,7 @@ class MqttMultiplayerClient(
         if (state.activePlayer.id == currentUid) return true
         // Hosts cover bots / disconnected / missing seats — never a connected
         // human's turn (otherwise the host could play the whole game alone).
-        if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) return false
+        if (snap.meta.hostId != currentUid) return false
         val active = snap.players.find { it.id == state.activePlayer.id }
         return active == null || active.isAi || !active.isConnected
     }
@@ -549,25 +657,28 @@ class MqttMultiplayerClient(
      */
     private suspend fun ensureConnectedWithWill(
         code: String,
+        presence: PlayerPresence? = null,
         preferServer: String? = roomServer
     ): Result<Unit> {
         relay.disconnect()
         val id = MqttRelayDataSource.newClientId(currentUid.ifBlank { localPlayerId })
-        val will = willFor(code)
-        val res = relay.connect(id, will.first, will.second, preferServer = preferServer)
+        val will = willFor(code, presence)
+        val res = relay.connect(
+            id,
+            will.first,
+            will.second,
+            preferServer = preferServer,
+            restrictToPreferredNetwork = preferServer != null
+        )
         if (res.isSuccess) roomServer = relay.connectedServer()
         return res
     }
 
-    private fun willFor(code: String): Pair<String, String> {
-        val offline = PlayerPresence(
-            id = currentUid,
-            name = localPlayerName,
-            avatarId = localAvatarId,
-            color = currentAssignedColor,
-            isConnected = false,
-            lastSeen = System.currentTimeMillis()
+    private fun willFor(code: String, presence: PlayerPresence? = null): Pair<String, String> {
+        val stable = presence ?: synchronized(snapshotLock) { latestPlayers[currentUid] } ?: PlayerPresence(
+            id = currentUid, name = localPlayerName, avatarId = localAvatarId, color = currentAssignedColor
         )
+        val offline = stable.copy(isConnected = false, lastSeen = System.currentTimeMillis())
         return MqttRelay.presenceTopic(code, currentUid) to relay.json.encodeToString(offline)
     }
 
@@ -586,8 +697,10 @@ class MqttMultiplayerClient(
         val handler: (String, String) -> Unit = { topic, payload ->
             val uid = MqttRelay.uidFromPresenceTopic(topic, code)
             if (uid != null) {
-                runCatching { relay.json.decodeFromString<PlayerPresence>(payload) }.getOrNull()?.let {
-                    synchronized(found) { found[uid] = it }
+                runCatching { relay.json.decodeFromString<PlayerPresence>(payload) }.getOrNull()?.let { presence ->
+                    if (ProtocolSafety.isValidPresence(presence, uid)) {
+                        synchronized(found) { found[uid] = presence }
+                    }
                 }
             }
         }
@@ -607,30 +720,43 @@ class MqttMultiplayerClient(
 
         jobs += relay.observeExact(MqttRelay.metaTopic(code)).onEach { raw ->
             runCatching { relay.json.decodeFromString<RoomMetadata>(raw) }.getOrNull()?.let { meta ->
-                synchronized(snapshotLock) {
-                    latestMeta = meta
-                    publishSnapshotLocked()
+                if (!ProtocolSafety.isValidMeta(meta, code)) return@let
+                val accepted = synchronized(snapshotLock) {
+                    val old = latestMeta
+                    if (!ProtocolSafety.shouldAcceptMeta(old, meta)) false else {
+                        latestMeta = meta
+                        publishSnapshotLocked()
+                        true
+                    }
                 }
-                maybeTriggerHost()
+                if (accepted) {
+                    maybeClaimHost()
+                    maybeTriggerHost()
+                }
             }
         }.launchIn(scope)
 
         jobs += relay.observePrefix(MqttRelay.playersPrefix(code)).onEach { (topic, payload) ->
             val uid = MqttRelay.uidFromPresenceTopic(topic, code) ?: return@onEach
             runCatching { relay.json.decodeFromString<PlayerPresence>(payload) }.getOrNull()?.let { presence ->
+                if (!ProtocolSafety.isValidPresence(presence, uid)) return@let
                 synchronized(snapshotLock) {
                     latestPlayers[uid] = presence
                     publishSnapshotLocked()
                 }
+                maybeClaimHost()
             }
         }.launchIn(scope)
 
         jobs += relay.observeExact(MqttRelay.stateTopic(code)).onEach { raw ->
             runCatching { relay.json.decodeFromString<GameState>(raw) }.getOrNull()?.let { remote ->
-                val local = _gameState.value
-                if (local == null || remote.version > local.version) {
+                val acceptedMeta = synchronized(snapshotLock) { latestMeta } ?: return@let
+                if (!ProtocolSafety.isValidGameState(remote, code, acceptedMeta.hostId)) return@let
+                if (remote.authorityEpoch != acceptedMeta.hostEpoch) return@let
+                if (ProtocolSafety.isNewerState(_gameState.value, remote)) {
                     _gameState.value = remote
                     synchronized(snapshotLock) { publishSnapshotLocked() }
+                    maybeClaimHost()
                     maybeTriggerHost()
                 }
             }
@@ -641,11 +767,12 @@ class MqttMultiplayerClient(
                 ?: return@onEach
             val snap = _roomState.value ?: return@onEach
             val game = _gameState.value ?: snap.gameState ?: return@onEach
-            if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) return@onEach
+            if (snap.meta.hostId != currentUid) return@onEach
+            if (game.authorityEpoch != snap.meta.hostEpoch || game.authorityHostId != snap.meta.hostId) return@onEach
             val result = authoritativeProcessor.processAction(action, game, snap.meta) ?: return@onEach
             _gameState.value = result.updatedState
-            result.updatedMeta?.let { publishMeta(it) }
-            publishState(result.updatedState)
+            if (publishState(result.updatedState).isFailure) return@onEach
+            result.updatedMeta?.let { if (publishMeta(it).isFailure) return@onEach }
             result.events.forEach { publishEvent(it) }
         }.launchIn(scope)
 
@@ -698,9 +825,63 @@ class MqttMultiplayerClient(
     private fun maybeTriggerHost() {
         val snap = _roomState.value ?: return
         val game = _gameState.value ?: snap.gameState ?: return
-        if (!hostElectionManager.isLocalPlayerHost(currentUid, snap.meta, snap.players)) return
+        if (snap.meta.hostId != currentUid) return
         if (snap.meta.status != RoomStatus.IN_GAME) return
+        if (game.authorityEpoch != snap.meta.hostEpoch || game.authorityHostId != snap.meta.hostId) return
         triggerHostEvaluation(snap.meta, game)
+    }
+
+    /** Persist deterministic host election so every client agrees on one authority. */
+    private fun maybeClaimHost() {
+        val snap = _roomState.value ?: return
+        if (snap.meta.status == RoomStatus.COMPLETED || snap.meta.status == RoomStatus.ABANDONED) return
+        if (snap.meta.hostId == currentUid) {
+            adoptAuthorityIfNeeded(snap.meta)
+            return
+        }
+        if (hostElectionManager.determineCurrentHost(snap.meta, snap.players) != currentUid) return
+        if (hostClaimJob?.isActive == true) return
+        val observedEpoch = snap.meta.hostEpoch
+        hostClaimJob = scope.launch {
+            // Give retained presence updates a short convergence window before
+            // publishing a new authority generation on a non-transactional relay.
+            delay(1_200L)
+            val latest = _roomState.value ?: return@launch
+            if (latest.meta.hostEpoch != observedEpoch || latest.meta.hostId == currentUid) return@launch
+            if (hostElectionManager.determineCurrentHost(latest.meta, latest.players) != currentUid) return@launch
+            val claimed = latest.meta.copy(
+                hostId = currentUid,
+                hostEpoch = observedEpoch + 1L,
+                updatedAt = System.currentTimeMillis()
+            )
+            if (publishMeta(claimed).isSuccess) {
+                val self = synchronized(snapshotLock) { latestPlayers[currentUid] }
+                if (self != null) {
+                    relay.publish(
+                        MqttRelay.presenceTopic(claimed.roomId, currentUid),
+                        relay.json.encodeToString(self.copy(isHost = true, lastSeen = System.currentTimeMillis())),
+                        retained = true
+                    )
+                }
+                adoptAuthorityIfNeeded(claimed)
+            }
+        }
+    }
+
+    private fun adoptAuthorityIfNeeded(meta: RoomMetadata) {
+        val state = _gameState.value ?: return
+        if (state.authorityEpoch > meta.hostEpoch ||
+            (state.authorityEpoch == meta.hostEpoch && state.authorityHostId == meta.hostId)) return
+        if (meta.hostId != currentUid) return
+        scope.launch {
+            val latest = _gameState.value ?: return@launch
+            if (latest.authorityEpoch > meta.hostEpoch ||
+                (latest.authorityEpoch == meta.hostEpoch && latest.authorityHostId == meta.hostId)) return@launch
+            val adopted = latest.copy(authorityEpoch = meta.hostEpoch, authorityHostId = meta.hostId)
+            _gameState.value = adopted
+            synchronized(snapshotLock) { publishSnapshotLocked() }
+            if (publishState(adopted).isSuccess) maybeTriggerHost()
+        }
     }
 
     private fun triggerHostEvaluation(meta: RoomMetadata, state: GameState) {
@@ -726,6 +907,8 @@ class MqttMultiplayerClient(
                                 type = ActionType.PASS_TURN,
                                 playerId = active.id,
                                 payload = "v=${state.version}",
+                                expectedVersion = state.version,
+                                expectedHostEpoch = meta.hostEpoch,
                                 timestamp = System.currentTimeMillis()
                             )
                         )
@@ -745,14 +928,16 @@ class MqttMultiplayerClient(
             val latestState = _gameState.value ?: return@launch
             val latestSnap = _roomState.value ?: return@launch
             if (latestState.activePlayerIndex == state.activePlayerIndex &&
-                latestState.version == state.version && !latestState.isGameOver
+                latestState.version == state.version &&
+                latestState.authorityEpoch == latestSnap.meta.hostEpoch &&
+                latestState.authorityHostId == latestSnap.meta.hostId && !latestState.isGameOver
             ) {
                 log("Turn deadline elapsed for ${active.name}, executing timeout step")
                 val result = authoritativeProcessor.processTimeout(latestState, latestSnap.meta)
                 if (result != null) {
                     _gameState.value = result.updatedState
-                    result.updatedMeta?.let { publishMeta(it) }
-                    publishState(result.updatedState)
+                    if (publishState(result.updatedState).isFailure) return@launch
+                    result.updatedMeta?.let { if (publishMeta(it).isFailure) return@launch }
                     result.events.forEach { publishEvent(it) }
                 }
             }
@@ -813,11 +998,21 @@ class MqttMultiplayerClient(
                     MqttRelayDataSource.newClientId(currentUid),
                     will.first,
                     will.second,
-                    preferServer = roomServer
+                    preferServer = roomServer,
+                    restrictToPreferredNetwork = roomServer != null
                 )
                 if (res.isSuccess) {
                     roomServer = relay.connectedServer()
                     republishSelf(code)
+                    // If we are canonical host, restore retained state too.
+                    // Public brokers can restart and lose retained snapshots;
+                    // the live host still owns the authoritative in-memory copy.
+                    val snap = _roomState.value
+                    val state = _gameState.value
+                    if (snap?.meta?.hostId == currentUid && state != null &&
+                        state.authorityEpoch == snap.meta.hostEpoch && state.authorityHostId == snap.meta.hostId) {
+                        publishState(state)
+                    }
                     _connectionState.value = ConnectionState.CONNECTED
                     reconnectManager.onConnected()
                     // Retained meta/state/presence re-arrive via resubscribe → snapshot catches up.
@@ -830,29 +1025,42 @@ class MqttMultiplayerClient(
 
     private fun publishSnapshotLocked() {
         val meta = latestMeta ?: return
-        val players = latestPlayers.values.sortedWith(compareBy({ it.joinedAt }, { it.id }))
+        val visible = if (meta.status == RoomStatus.LOBBY) {
+            val admitted = selectAdmittedPlayerIds(latestPlayers.values, meta.maxPlayers)
+            latestPlayers.values.filter { isSeatLive(it) && it.id in admitted }
+        } else {
+            latestPlayers.values
+        }
+        val players = visible.sortedWith(compareBy({ it.joinedAt }, { it.id }))
         _roomState.value = RoomSnapshot(meta = meta, players = players, gameState = _gameState.value)
     }
 
     private suspend fun publishMeta(meta: RoomMetadata): Result<Unit> {
-        synchronized(snapshotLock) {
-            latestMeta = meta
-            publishSnapshotLocked()
-        }
-        return relay.publish(
+        val result = relay.publish(
             MqttRelay.metaTopic(meta.roomId),
             relay.json.encodeToString(meta),
             retained = true
         )
+        if (result.isSuccess) {
+            synchronized(snapshotLock) {
+                latestMeta = meta
+                publishSnapshotLocked()
+            }
+        } else {
+            handleLinkFailure()
+        }
+        return result
     }
 
     private suspend fun publishState(state: GameState): Result<Unit> {
         val code = joinedCode ?: return Result.failure(RoomError.RoomNotFound)
-        return relay.publish(
+        val result = relay.publish(
             MqttRelay.stateTopic(code),
             relay.json.encodeToString(state),
             retained = true
         )
+        if (result.isFailure) handleLinkFailure()
+        return result
     }
 
     private suspend fun publishEvent(event: com.neoludo.game.multiplayer.model.NetworkEvent): Result<Unit> {
@@ -863,8 +1071,11 @@ class MqttMultiplayerClient(
         )
     }
 
-    private suspend fun publishChat(code: String, chat: ChatEvent): Result<Unit> =
-        relay.publish(MqttRelay.chatTopic(code), relay.json.encodeToString(chat))
+    private suspend fun publishChat(code: String, chat: ChatEvent): Result<Unit> {
+        val result = relay.publish(MqttRelay.chatTopic(code), relay.json.encodeToString(chat))
+        if (result.isFailure) handleLinkFailure()
+        return result
+    }
 
     private suspend fun postAction(roomId: String, action: NetworkAction): Result<Unit> {
         val res = relay.publish(MqttRelay.actionsTopic(roomId), relay.json.encodeToString(action))
@@ -883,6 +1094,25 @@ internal const val SEAT_LIVE_WINDOW_MS = 60_000L
 internal fun isSeatLive(p: PlayerPresence, now: Long = System.currentTimeMillis()): Boolean =
     p.isConnected || (now - p.lastSeen) < SEAT_LIVE_WINDOW_MS
 
+
+/**
+ * Deterministic admission for relay rooms. MQTT has no compare-and-set
+ * transaction, so simultaneous joins converge by ordering live human seats
+ * by their immutable join timestamp and id and keeping only the first N.
+ */
+internal fun selectAdmittedPlayerIds(
+    players: Collection<PlayerPresence>,
+    maxPlayers: Int,
+    now: Long = System.currentTimeMillis()
+): Set<String> = players
+    .asSequence()
+    .filter { !it.isAi && isSeatLive(it, now) }
+    .distinctBy { it.id }
+    .sortedWith(compareBy<PlayerPresence>({ it.joinedAt }, { it.id }))
+    .take(maxPlayers.coerceIn(1, 4))
+    .map { it.id }
+    .toSet()
+
 /**
  * Host cover rule: the host may act for bots, disconnected players and
  * seats missing from presence — but never for a connected human's turn.
@@ -900,9 +1130,10 @@ internal fun canHostCoverTurn(isHost: Boolean, activePresence: PlayerPresence?):
  * return null when no valid game is possible (caller shows a lobby error
  * instead of crashing).
  */
-internal fun sanitizePlayersForStart(players: List<PlayerPresence>): List<PlayerPresence>? {
+internal fun sanitizePlayersForStart(players: List<PlayerPresence>, allowSingle: Boolean = false): List<PlayerPresence>? {
     val distinct = players.distinctBy { it.id }
-    if (distinct.size < 2 || distinct.size > 4) return null
+    val minPlayers = if (allowSingle) 1 else 2
+    if (distinct.size < minPlayers || distinct.size > 4) return null
     val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
     val used = mutableSetOf<PlayerColor>()
     val free = ArrayDeque(allColors.filter { c -> distinct.none { it.color == c } })

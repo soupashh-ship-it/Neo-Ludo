@@ -84,6 +84,7 @@ import com.neoludo.game.engine.model.GameState
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.TurnPhase
 import com.neoludo.game.multiplayer.MultiplayerClient
+import com.neoludo.game.multiplayer.OnlineRoomClient
 import com.neoludo.game.multiplayer.model.ChatEvent
 import com.neoludo.game.engine.rules.MoveValidator
 import com.neoludo.game.engine.coordinate.BoardCoordinates
@@ -159,10 +160,7 @@ fun GameScreen(
         // Auto-action only AFTER the full turn timeout (AFK), not instantly —
         // previous code auto-rolled/moved immediately, robbing the human turn.
         val current = gameState ?: return@LaunchedEffect
-        val isLocalActive = when (client) {
-            is com.neoludo.game.multiplayer.FirebaseMultiplayerClient -> client.currentUid == current.activePlayer.id
-            else -> !current.activePlayer.isBot
-        }
+        val isLocalActive = isLocalHumanTurn(client, current)
         if (!current.isGameOver && isLocalActive) {
             delay(currentTimer * 1000L)
             // Re-read: turn may have advanced while waiting.
@@ -380,7 +378,7 @@ fun GameScreen(
                 CanvasLudoBoard(
                     gameState = state,
                     onPieceClick = { pieceId ->
-                        if (!isExecutingMove && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+                        if (!isExecutingMove && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
                             scope.launch {
                                 isExecutingMove = true
                                 client.movePiece(pieceId).onFailure { actionError = it.message }
@@ -421,7 +419,7 @@ fun GameScreen(
                     diceSkin = diceSkin,
                     motionEnabled = !reducedMotion,
                     onRollDice = {
-                        if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
+                        if (!isRollingAnimation && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
                                 isRollingAnimation = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
@@ -467,9 +465,10 @@ fun GameScreen(
                     diceSkin = diceSkin,
                     secondsLeft = ((state.ruleSet.turnTimerSeconds * timerProgress.value).toInt().coerceIn(0, state.ruleSet.turnTimerSeconds)),
                     autoActed = autoActedNotice,
+                    isLocalTurn = isLocalHumanTurn(client, state),
                     motionEnabled = !reducedMotion,
                     onRollDice = {
-                        if (!isRollingAnimation && !state.isGameOver && !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
+                        if (!isRollingAnimation && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
                                 isRollingAnimation = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
@@ -533,8 +532,14 @@ fun GameScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         showSurrenderDialog = false
-                        scope.launch { client.leaveRoom() }
-                        onExitGame()
+                        // Finish the network leave before navigation disposes
+                        // this screen (and releases the transport). Otherwise
+                        // a clean MQTT disconnect can leave a retained seat
+                        // looking permanently connected to the other players.
+                        scope.launch {
+                            client.leaveRoom()
+                            onExitGame()
+                        }
                     }) {
                         Text(text = "Leave", color = NeoLudoColors.RubyRed, fontWeight = FontWeight.Bold)
                     }
@@ -547,6 +552,14 @@ fun GameScreen(
                 containerColor = palette.cardSurface
             )
         }
+    }
+}
+
+private fun isLocalHumanTurn(client: MultiplayerClient, state: GameState): Boolean {
+    if (state.activePlayer.isBot) return false
+    return when (client) {
+        is OnlineRoomClient -> client.currentUid == state.activePlayer.id
+        else -> true // local pass-and-play: every human seat is on this device
     }
 }
 
@@ -664,24 +677,33 @@ private fun TurnActionTray(
     onRollDice: () -> Unit,
     secondsLeft: Int = -1,
     autoActed: Boolean = false,
+    isLocalTurn: Boolean = true,
     motionEnabled: Boolean = true
 ) {
     val active = state.activePlayer
     val playerColor = NeoLudoColors.getBrutalistPlayerColor(active.color)
 
     val promptTitle = when {
-        active.isBot -> "${active.name}'s Turn"
+        active.isBot || !isLocalTurn -> "${active.name}'s Turn"
         else -> "Your Turn • ${active.name}"
     }
 
     val promptInstruction = when (state.turnPhase) {
         TurnPhase.WAITING_FOR_ROLL -> {
-            if (active.isBot) "Rolling the dice..." else "Tap Dice to Roll!"
+            when {
+                active.isBot -> "Rolling the dice..."
+                !isLocalTurn -> "Waiting for ${active.name} to roll..."
+                else -> "Tap Dice to Roll!"
+            }
         }
         TurnPhase.WAITING_FOR_MOVE -> {
             val diceVal = state.diceState.value
             val stepWord = if (diceVal == 1) "1 step" else "$diceVal steps"
-            if (active.isBot) "${active.name} advancing $stepWord" else "Rolled $diceVal • Tap glowing piece to advance $stepWord"
+            when {
+                active.isBot -> "${active.name} advancing $stepWord"
+                !isLocalTurn -> "${active.name} rolled $diceVal • waiting for their move"
+                else -> "Rolled $diceVal • Tap glowing piece to advance $stepWord"
+            }
         }
         TurnPhase.AUTO_ADVANCING -> "Advancing piece..."
         TurnPhase.GAME_OVER -> "Game Over!"

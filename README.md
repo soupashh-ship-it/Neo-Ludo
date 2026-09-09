@@ -1,160 +1,139 @@
-# 🎲 Neo Ludo — Production-Ready Android Multiplayer Game (Ad-Free)
+# Neo Ludo — Ad-Free Android Ludo
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.0-blue.svg?logo=kotlin)](https://kotlinlang.org)
-[![Android Gradle Plugin](https://img.shields.io/badge/AGP-8.5.0-green.svg?logo=android)](https://developer.android.com/studio/releases/gradle-plugin)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.06.00-4285F4.svg?logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
-[![MinSdk](https://img.shields.io/badge/MinSdk-24-orange.svg)](https://developer.android.com)
-[![TargetSdk](https://img.shields.io/badge/TargetSdk-34-brightgreen.svg)](https://developer.android.com)
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
-[![Ad-Free](https://img.shields.io/badge/Ads-Zero%20%2F%20100%25%20Free-red.svg)](#)
+Neo Ludo is a Kotlin + Jetpack Compose Ludo app for Android (minSdk 24, targetSdk 34) with offline play, bots, and private online rooms for up to four friends.
 
-An original, production-ready, ad-free Android multiplayer Ludo game engineered with **Kotlin 2.0** and **Jetpack Compose** for Android 14+ (minSdk 24, targetSdk 34/35). 
+## What works immediately after install
 
-Featuring a **100% deterministic pure Kotlin rule engine**, custom high-performance **60 FPS Canvas-rendered Neo-Ludo board graphics**, dynamic **3D-styled animated dice with spring physics**, low-latency **SoundPool audio & tactile haptics**, **DataStore persistence**, and **real-time synchronized online multiplayer** backed by Firebase Authentication and Firebase Realtime Database with action-based canonical state authority and automatic AI proxy reconnection handling.
+The default online mode needs **no server address, no same Wi-Fi, no Firebase file, and no account setup on the players' phones**. It uses public HiveMQ/EMQX MQTT relays (TLS first, TCP fallback) for private room-code games.
 
----
+A typical four-friend flow is:
 
-## ✨ Features & Game Modes
+1. Install the same app version on all phones and connect each phone to the internet.
+2. One player opens **Play With Friends → Create Private Room**.
+3. Share the six-character room code.
+4. The other players choose **Join With Room Code**, enter the code, and ready up.
+5. The host starts the match.
 
-### 🎮 Game Modes
-1. **Play with Friends**: Create private rooms with custom 6-character room codes (`NL-XXXXXX`), real-time waiting lobby, 1-tap copy/share intent, host bot filling, and atomic player presence.
-2. **Play Online**: Real-time room matchmaking & quick join with real players worldwide.
-3. **Pass & Play (Local)**: 100% offline match for 2, 3, or 4 players on a single device screen with zero latency.
-4. **Vs Computer (AI)**: Solo play against 1–3 intelligent bots across 3 difficulty tiers (`Easy`, `Normal`, `Hard`).
+The phones may be on different ISPs/mobile networks and in different parts of India. No LAN or port-forwarding is required.
 
-### 🎲 Classic Board — One Look for Everyone
+### Important production distinction
 
-The board is a traditional Ludo layout (colored yards, star-marked safe
-squares, home stretches with arrows, center home triangles) with a classic
-ivory die — identical on every phone, no skins or themes to configure.
+The built-in MQTT path is deliberately zero-configuration and internet reachable, but HiveMQ/EMQX public brokers are third-party, best-effort relay infrastructure with no application-specific SLA or authentication guarantee. Neo Ludo therefore hardens the protocol itself with deterministic admission, canonical snapshots, version/authority fencing, duplicate/stale action rejection, reconnect recovery, host migration, and room tombstones, but an app cannot turn a public broker into an owned production service.
 
-### 🌐 Online Play — Zero Setup (Free Public Relay)
+For an owned, authenticated backend, add a Firebase project as described below. The app automatically chooses Firebase when a valid `google-services.json` is present; otherwise it uses the zero-setup MQTT mode.
 
-Private online rooms **just work after install — no account, no server, no config file.**
-The app syncs over a free public MQTT relay (HiveMQ / EMQX, TLS-first) with the
-same host-authoritative engine as Firebase mode: the room host's phone computes
-canonical turns, late joiners catch up from the retained snapshot, and presence
-(explicit leave + crash detection) drives host migration and AFK AI takeover.
+## Game modes
 
-**To play with friends (up to 4, anywhere):**
-1. Everyone installs the **same APK** and opens the game (internet required).
-2. Host: **Play with Friends → Create Room** → pick player count → share the
-   `NL-XXXXXX` code (Copy / Share buttons in the lobby).
-3. Friends: **Join Room** → enter the code → **Ready Up**.
-4. Host taps **Start Game** (can fill empty seats with bots).
+- **Play With Friends** — private online room-code games for up to four real players.
+- **Pass & Play** — 2–4 players on one device, fully offline.
+- **Vs Computer** — play against bots with multiple difficulty levels.
 
-Notes & limits:
-- Everyone in a room converges on one relay automatically (sticky server +
-  multi-relay join scan), and reconnects return to the room's own relay — if
-  the lobby shows "Reconnecting…", stay on the screen or tap RETRY.
-- Both phones must run the SAME version (check Settings on each). The lobby
-  shows a diagnostics line (`You: name • id • via HiveMQ/EMQX`) — if two
-  phones show the same id, reinstall on one of them so each has its own
-  identity (same-Google-account restores can clone it).
-- Public relays are best-effort (no SLA) and obscurity-private: room traffic is
-  unlisted but guessable from the code, so don't share personal info in names/chat.
-- If the host's app dies mid-match, the lowest-joined connected player takes
-  over automatically; AFK players are auto-played after the turn timer.
-- Prefer your own backend? Add `app/google-services.json` from your Firebase
-  project (enable Anonymous Auth + Realtime Database, deploy
-  `database.rules.json`) and rebuild — the app switches to Firebase
-  automatically with zero code changes.
+There is no fake worldwide matchmaking service in this release. The Friends entry is a room-code play hub, not a fabricated online-presence directory.
 
-### 🧠 Pure Kotlin Deterministic Rule Engine
-- Standard **15x15 Ludo coordinate grid** with 52 perimeter path cells.
-- **8 Designated Safe Zones**: 4 color starting tiles (`0, 13, 26, 39`) and 4 laser-cut star cells (`8, 21, 34, 47`) where pieces peacefully coexist without capture.
-- **Capture Mechanics**: Landing on an opponent piece on an unsafe tile sends them back to their corner Yard and awards the attacking player an immediate **Extra Bonus Turn**.
-- **Bonus Turns**: Awarded upon rolling a `6`, capturing an enemy piece, or scoring a token into Home.
-- **3x Consecutive Sixes Penalty**: Official tournament rule forfeiting the turn on 3 consecutive 6s (customizable in rules).
-- **Exact Roll Home Entry**: Private 5-step colored home stretch requiring an exact dice roll to reach center Home (`step 56`).
+## Canonical Ludo rules
 
-### ⚡ Realtime Multiplayer Architecture
-- **Action-Based Authority:** Clients submit actions (`ROLL_DICE`, `MOVE_PIECE`, `PASS_TURN`, `SET_READY`), and the designated host/authority deterministically computes canonical `GameState` updates and monotonically increments `version`.
-- **Zero Polling & Zero Fake Fallbacks:** 100% reactive listeners via Firebase Realtime Database SDK (`ValueEventListener` & `ChildEventListener`).
-- **Atomic Joins:** Firebase Realtime Database transactions prevent race conditions, seat collisions, and color conflicts.
-- **Presence & Auto Reconnection:** Real-time `.info/connected` status tracking with automatic state reconciliation upon reconnection.
-- **Deterministic Timeout & AI Takeover:** Authoritative turn timer resolution prevents competing client actions when a player disconnects or is AFK.
-- **Host Migration:** If the room host disconnects, the lowest connected UID is automatically elected as the new authoritative host with incremented `hostEpoch`.
+The game uses one deterministic Kotlin engine for move legality and state transitions. The configured standard rules include:
 
----
+- four pieces per player;
+- a six is required to leave the yard;
+- safe/start cells cannot be captured on;
+- landing on an opponent on an unsafe path cell captures it;
+- exact movement is required to reach Home;
+- overshooting Home is illegal;
+- a six grants a bonus roll;
+- captures and reaching Home grant bonus turns when enabled by the room rules;
+- three consecutive sixes forfeit the turn when that option is enabled;
+- rankings/game completion are determined from finished pieces/players.
 
-## 🏛️ Project Structure
+## Multiplayer synchronization
 
-```text
-com.neoludo.game/
-├── core/
-│   ├── audio/           # SoundController (SoundPool), HapticController (Vibrator)
-│   ├── designsystem/    # Theme, Colors, Typography, Glowing Buttons, Player Plates
-│   └── model/           # UserProfile, GameSettings, UserStats, Friend, ThemeMode
-├── engine/              # Pure Kotlin Deterministic Engine (0 Android Dependencies)
-│   ├── coordinate/      # BoardCoordinates, GridCoord, 15x15 Grid Math, 52-path mapping
-│   ├── model/           # GameState, PlayerState, Piece, PiecePosition, DiceState, TurnPhase
-│   ├── rules/           # MoveValidator, MoveCalculation, Capture Logic
-│   └── ai/              # LudoBotEngine, Difficulty (Easy, Normal, Hard), Danger Heatmaps
-├── multiplayer/         # Multiplayer Architecture
-│   ├── MultiplayerClient.kt         # Unified Game Session Interface
-│   ├── LocalMultiplayerClient.kt    # Offline Pass & Play Controller
-│   ├── BotMultiplayerClient.kt      # Offline Human vs AI Bot Controller
-│   ├── FirebaseMultiplayerClient.kt # Real-time Synchronized Network Multiplayer
-│   ├── backend/         # FirebaseAuthDataSource, FirebaseRoomDataSource
-│   ├── model/           # RoomMetadata, PlayerPresence, NetworkAction, NetworkEvent, ChatEvent
-│   ├── repository/      # RoomRepository, ActionRepository, PresenceRepository, ChatRepository
-│   └── sync/            # ActionDeduplicator, AuthoritativeGameProcessor, HostElectionManager
-├── data/
-│   ├── datastore/       # PreferencesDataStore (Theme, Audio, Timer, Rules)
-│   └── repository/      # SettingsRepository, ProfileRepository, StatsRepository, FriendRepository
-└── ui/                  # Jetpack Compose Presentation Layer
-    ├── navigation/      # NeoLudoNavHost, Typed Routes
-    ├── home/            # HomeHeader, PlayWithFriendsCard, GameModeGrid, DailyReward
-    ├── room/            # CreateRoomScreen, JoinRoomScreen, LobbyWaitingRoomScreen
-    ├── game/            # GameScreen, CanvasLudoBoard, TwoPlayerArcadeBottomBar, EmoteOverlay
-    ├── result/          # GameResultScreen, Podium Rankings & Match Highlights
-    ├── profile/         # ProfileScreen, 16 Avatar Selectors, Lifetime Stats
-    ├── friends/         # FriendsScreen, Live Online Status, Add Friend Dialog
-    ├── settings/        # SettingsScreen, Theme Picker, Volume Sliders, Rule Defaults
-    └── rules/           # RulesGuideScreen, Visual Handbook
+### Shared protocol safety
+
+Every online game state carries:
+
+- a monotonically increasing `version`;
+- an authority generation (`authorityEpoch`);
+- the authoritative host id (`authorityHostId`).
+
+Actions carry the state version and host generation they were based on. The authority rejects stale-version, stale-host, wrong-player, illegal-phase, duplicate, and illegal-move requests. Dice values for online games are produced by the authoritative processor; normal clients do not choose their dice result.
+
+A full canonical snapshot is retained so reconnecting clients can recover without replaying an unbounded event stream. Older snapshots and same-generation host forks are ignored.
+
+### Zero-setup MQTT mode
+
+- Scans HiveMQ and EMQX only while locating a room, then pins that room to the broker network where it was found.
+- Uses retained room metadata, player presence, and canonical game state for recovery.
+- Uses crash-disconnect wills plus heartbeats and explicit leave handling.
+- Existing logical players may reclaim their seat after process death/background termination, including after the match has started.
+- Host migration advances the authority epoch so old-host frames cannot fork the match.
+- Simultaneous joins converge through deterministic post-join admission; at most the configured four live human seats survive.
+- Old room codes are tombstoned rather than recycled, avoiding retained-state resurrection.
+
+### Optional Firebase mode
+
+Firebase gives the project an owned authenticated data plane when you provide your own Firebase project:
+
+1. Create a Firebase Android app for package `com.neoludo.game`.
+2. Put its `google-services.json` at `app/google-services.json`.
+3. Enable **Anonymous Authentication**.
+4. Create a **Realtime Database**.
+5. Deploy the included `database.rules.json`.
+
+Example with the Firebase CLI from the repository root:
+
+```bash
+firebase login
+firebase use <your-project-id>
+firebase deploy --only database
 ```
 
----
+The database rules restrict player writes to the player's own presence record and canonical state mutation to the current room host/authority, while validating room/action fields.
 
-## 🛠️ Building & Running Locally
+## Project structure
+
+```text
+app/src/main/java/com/neoludo/game/
+├── core/                  # audio, haptics, design system, shared models
+├── engine/                # deterministic rules, board coordinates, bots
+├── multiplayer/
+│   ├── backend/           # Firebase + MQTT transport data sources
+│   ├── model/             # rooms, presence, actions, events
+│   ├── repository/        # multiplayer repositories
+│   └── sync/              # authority, dedupe, election, protocol guards
+├── data/                  # DataStore/profile/settings/stat repositories
+└── ui/                    # Compose screens and navigation
+```
+
+## Build
 
 ### Prerequisites
-- Android Studio Iguana / Jellyfish / Koala or newer
-- JDK 17
-- Android SDK (compileSdk 34)
 
-### Build Commands
+- JDK 17 or newer supported by the configured Android Gradle Plugin
+- Android SDK / compileSdk 34
+- Android Studio or a working Gradle wrapper environment
+
+### Commands
+
+Windows:
+
+```powershell
+.\gradlew.bat clean test assembleDebug lint
+.\gradlew.bat assembleRelease
+```
+
+macOS/Linux:
+
 ```bash
-# Clone the repository
-git clone https://github.com/soupashh-ship-it/Neo-Ludo.git
-cd Neo-Ludo
-
-# Run all unit and integration tests
-./gradlew test
-
-# Assemble the debug APK
-./gradlew assembleDebug
-
-# Assemble the release APK
+./gradlew clean test assembleDebug lint
 ./gradlew assembleRelease
 ```
 
----
+A release APK intended for distribution should be signed with your own Android signing keystore. Do not commit private signing keys or service credentials to source control.
 
-## 🧪 Automated Test Suite
+## Validation and audit
 
-- **`LudoGameEngineTest`**: Engine rules, exact home rolls, bonus turns, 3x sixes penalty, multi-player rankings.
-- **`LudoBotEngineTest`**: AI decision heuristics, safe cell threat evaluation, full game simulation.
-- **`MultiplayerSyncTest`**: Action deduplication, host election on disconnect, authoritative game processor, turn flow, piece captures, room code normalization, and local turn cycles.
-- **`EconomyAndStatsTest`**: Lifetime stats, win rate caps, currency spending, cosmetics unlocks.
+See `PROJECT_AUDIT_AND_FIX_REPORT.md` for the exact fixes applied, checks actually run, environment limitations, and any remaining external deployment requirements. Do not treat historical APKs or historical test reports as proof that the current source was freshly built.
 
----
+## License
 
-## 📄 License
-
-```text
-MIT License
-
-Copyright (c) 2026 Neo Ludo Contributors
-```
+MIT License. See `LICENSE`.

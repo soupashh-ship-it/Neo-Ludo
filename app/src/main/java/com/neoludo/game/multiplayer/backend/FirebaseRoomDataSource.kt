@@ -22,6 +22,7 @@ import com.neoludo.game.multiplayer.model.RoomError
 import com.neoludo.game.multiplayer.model.RoomMetadata
 import com.neoludo.game.multiplayer.model.RoomSnapshot
 import com.neoludo.game.multiplayer.model.RoomStatus
+import com.neoludo.game.multiplayer.sync.ProtocolSafety
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -57,50 +58,50 @@ class FirebaseRoomDataSource(
         host: PlayerPresence
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val ref = roomRef(meta.roomId) ?: return@withContext Result.failure(RoomError.AuthenticationRequired)
+        if (!ProtocolSafety.isValidMeta(meta, meta.roomId) || !ProtocolSafety.isValidPresence(host, host.id)) {
+            return@withContext Result.failure(RoomError.NetworkFailure("Invalid room configuration"))
+        }
 
-        try {
-            val metaMap = mapOf(
-                "roomId" to meta.roomId,
-                "hostId" to meta.hostId,
-                "hostEpoch" to meta.hostEpoch,
-                "status" to meta.status.name,
-                "maxPlayers" to meta.maxPlayers,
-                "fillBots" to meta.fillBots,
-                "ruleSet" to json.encodeToString(meta.ruleSet),
-                "createdAt" to ServerValue.TIMESTAMP,
-                "updatedAt" to ServerValue.TIMESTAMP,
-                "turnStartedAt" to meta.turnStartedAt,
-                "turnDeadline" to meta.turnDeadline
-            )
+        val metaMap = mapOf(
+            "roomId" to meta.roomId, "hostId" to meta.hostId, "hostEpoch" to meta.hostEpoch,
+            "status" to meta.status.name, "maxPlayers" to meta.maxPlayers, "fillBots" to meta.fillBots,
+            "ruleSet" to json.encodeToString(meta.ruleSet), "createdAt" to ServerValue.TIMESTAMP,
+            "updatedAt" to ServerValue.TIMESTAMP, "turnStartedAt" to meta.turnStartedAt,
+            "turnDeadline" to meta.turnDeadline
+        )
+        val hostMap = mapOf(
+            "id" to host.id, "name" to host.name, "avatarId" to host.avatarId,
+            "color" to host.color.name, "isHost" to true, "isReady" to true,
+            "isConnected" to true, "isAi" to false, "joinedAt" to ServerValue.TIMESTAMP,
+            "lastSeen" to ServerValue.TIMESTAMP
+        )
+        val roomValue = mapOf("meta" to metaMap, "players" to mapOf(host.id to hostMap))
 
-            val hostMap = mapOf(
-                "id" to host.id,
-                "name" to host.name,
-                "avatarId" to host.avatarId,
-                "color" to host.color.name,
-                "isHost" to true,
-                "isReady" to true,
-                "isConnected" to true,
-                "isAi" to false,
-                "joinedAt" to ServerValue.TIMESTAMP,
-                "lastSeen" to ServerValue.TIMESTAMP
-            )
+        suspendCancellableCoroutine { continuation ->
+            var collision = false
+            ref.runTransaction(object : Transaction.Handler {
+                override fun doTransaction(currentData: MutableData): Transaction.Result {
+                    if (currentData.value != null) {
+                        collision = true
+                        return Transaction.abort()
+                    }
+                    currentData.value = roomValue
+                    return Transaction.success(currentData)
+                }
 
-            val updates = mutableMapOf<String, Any>(
-                "meta" to metaMap,
-                "players/${host.id}" to hostMap
-            )
-
-            ref.updateChildren(updates).await()
-
-            // Setup disconnect presence for host
-            ref.child("players/${host.id}/isConnected").onDisconnect().setValue(false)
-            ref.child("players/${host.id}/lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
-
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to create room: ${e.message}", e)
-            Result.failure(RoomError.NetworkFailure(e.message ?: "Failed to create room"))
+                override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {
+                    if (!continuation.isActive) return
+                    if (committed) {
+                        ref.child("players/${host.id}/isConnected").onDisconnect().setValue(false)
+                        ref.child("players/${host.id}/lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
+                        continuation.resume(Result.success(Unit))
+                    } else {
+                        val failure = if (collision) RoomError.NetworkFailure("Room code collision; retry creation")
+                        else RoomError.NetworkFailure(error?.message ?: "Failed to create room")
+                        continuation.resume(Result.failure(failure))
+                    }
+                }
+            })
         }
     }
 
@@ -110,104 +111,91 @@ class FirebaseRoomDataSource(
     ): Result<PlayerPresence> = withContext(Dispatchers.IO) {
         val cleanRoomId = roomId.trim().uppercase()
         val ref = roomRef(cleanRoomId) ?: return@withContext Result.failure(RoomError.AuthenticationRequired)
+        try {
+            val room = ref.get().await()
+            if (!room.exists()) return@withContext Result.failure(RoomError.RoomNotFound)
+            val metaData = room.child("meta")
+            val status = runCatching { RoomStatus.valueOf(metaData.child("status").getValue(String::class.java) ?: "LOBBY") }
+                .getOrDefault(RoomStatus.LOBBY)
+            val max = (metaData.child("maxPlayers").getValue(Int::class.java) ?: 4).coerceIn(2, 4)
+            val playersData = room.child("players")
+            val existing = playersData.child(player.id)
+            // A new player cannot late-join a running match, but an existing
+            // logical player must be able to reclaim their seat after process
+            // death/network loss and receive the canonical state snapshot.
+            if (status != RoomStatus.LOBBY && !existing.exists()) {
+                return@withContext Result.failure(RoomError.GameAlreadyStarted)
+            }
+            if (status == RoomStatus.COMPLETED || status == RoomStatus.ABANDONED) {
+                return@withContext Result.failure(RoomError.GameAlreadyStarted)
+            }
 
+            val assigned = if (existing.exists()) {
+                val existingColor = runCatching {
+                    PlayerColor.valueOf(existing.child("color").getValue(String::class.java) ?: player.color.name)
+                }.getOrDefault(player.color)
+                val joined = existing.child("joinedAt").getValue(Long::class.java) ?: player.joinedAt
+                val wasHost = existing.child("isHost").getValue(Boolean::class.java) ?: false
+                val wasReady = existing.child("isReady").getValue(Boolean::class.java) ?: false
+                player.copy(
+                    color = existingColor,
+                    isHost = wasHost,
+                    isReady = wasReady,
+                    isConnected = true,
+                    joinedAt = joined,
+                    lastSeen = System.currentTimeMillis()
+                )
+            } else {
+                if (playersData.childrenCount >= max.toLong()) return@withContext Result.failure(RoomError.RoomFull)
+                val used = playersData.children.mapNotNull { child ->
+                    child.child("color").getValue(String::class.java)?.let { runCatching { PlayerColor.valueOf(it) }.getOrNull() }
+                }.toSet()
+                val all = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
+                val color = if (player.color !in used) player.color else all.firstOrNull { it !in used } ?: player.color
+                player.copy(color = color, isHost = false, isReady = false, isConnected = true,
+                    joinedAt = System.currentTimeMillis(), lastSeen = System.currentTimeMillis())
+            }
+
+            val map = mapOf(
+                "id" to assigned.id, "name" to assigned.name.take(30), "avatarId" to assigned.avatarId,
+                "color" to assigned.color.name, "isHost" to assigned.isHost, "isReady" to assigned.isReady,
+                "isConnected" to true, "isAi" to false, "joinedAt" to assigned.joinedAt,
+                "lastSeen" to ServerValue.TIMESTAMP
+            )
+            // Capacity is enforced again server-side by the players parent .validate rule,
+            // so two simultaneous final-seat joins cannot create a fifth player.
+            ref.child("players/${assigned.id}").setValue(map).await()
+            ref.child("players/${assigned.id}/isConnected").onDisconnect().setValue(false)
+            ref.child("players/${assigned.id}/lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
+            Result.success(assigned)
+        } catch (e: Exception) {
+            // A concurrent join can win the last slot between our read and write.
+            val count = runCatching { ref.child("players").get().await().childrenCount }.getOrNull()
+            val max = runCatching { ref.child("meta/maxPlayers").get().await().getValue(Int::class.java) ?: 4 }.getOrDefault(4)
+            if (count != null && count >= max.toLong()) Result.failure(RoomError.RoomFull)
+            else Result.failure(RoomError.NetworkFailure(e.message ?: "Failed to join room"))
+        }
+    }
+
+    suspend fun claimHost(roomId: String, uid: String, expectedEpoch: Long): Result<Long> = withContext(Dispatchers.IO) {
+        val ref = roomRef(roomId)?.child("meta") ?: return@withContext Result.failure(RoomError.AuthenticationRequired)
         suspendCancellableCoroutine { continuation ->
+            var newEpoch = -1L
             ref.runTransaction(object : Transaction.Handler {
-                var assignedPlayer: PlayerPresence? = null
-                var transactionError: RoomError? = null
-
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
-                    val metaData = currentData.child("meta")
-                    if (metaData.value == null) {
-                        transactionError = RoomError.RoomNotFound
-                        return Transaction.abort()
-                    }
-                    val statusStr = metaData.child("status").getValue(String::class.java) ?: RoomStatus.LOBBY.name
-                    val status = try { RoomStatus.valueOf(statusStr) } catch (e: Exception) { RoomStatus.LOBBY }
-                    if (status != RoomStatus.LOBBY) {
-                        transactionError = RoomError.GameAlreadyStarted
-                        return Transaction.abort()
-                    }
-
-                    val maxPlayers = metaData.child("maxPlayers").getValue(Int::class.java) ?: 4
-                    val playersData = currentData.child("players")
-
-                    val existingPlayerIds = mutableListOf<String>()
-                    val usedColors = mutableSetOf<PlayerColor>()
-
-                    for (child in playersData.children) {
-                        val pid = child.key ?: continue
-                        existingPlayerIds.add(pid)
-                        val colorStr = child.child("color").getValue(String::class.java)
-                        if (colorStr != null) {
-                            try { usedColors.add(PlayerColor.valueOf(colorStr)) } catch (_: Exception) {}
-                        }
-                    }
-
-                    if (existingPlayerIds.contains(player.id)) {
-                        // Re-joining existing seat
-                        val existingColor = playersData.child(player.id).child("color").getValue(String::class.java)
-                        val col = try { PlayerColor.valueOf(existingColor ?: player.color.name) } catch (_: Exception) { player.color }
-                        assignedPlayer = player.copy(color = col, isConnected = true)
-                        playersData.child(player.id).child("isConnected").value = true
-                        playersData.child(player.id).child("lastSeen").value = System.currentTimeMillis()
-                        return Transaction.success(currentData)
-                    }
-
-                    if (existingPlayerIds.size >= maxPlayers) {
-                        transactionError = RoomError.RoomFull
-                        return Transaction.abort()
-                    }
-
-                    // Assign first available non-conflicting color
-                    val allColors = listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
-                    val availableColor = if (player.color !in usedColors) {
-                        player.color
-                    } else {
-                        allColors.firstOrNull { it !in usedColors } ?: player.color
-                    }
-
-                    val newPlayer = player.copy(
-                        color = availableColor,
-                        isHost = false,
-                        isReady = false,
-                        isConnected = true,
-                        joinedAt = System.currentTimeMillis(),
-                        lastSeen = System.currentTimeMillis()
-                    )
-                    assignedPlayer = newPlayer
-
-                    val playerMap = mapOf(
-                        "id" to newPlayer.id,
-                        "name" to newPlayer.name,
-                        "avatarId" to newPlayer.avatarId,
-                        "color" to newPlayer.color.name,
-                        "isHost" to false,
-                        "isReady" to false,
-                        "isConnected" to true,
-                        "isAi" to false,
-                        "joinedAt" to System.currentTimeMillis(),
-                        "lastSeen" to System.currentTimeMillis()
-                    )
-
-                    playersData.child(newPlayer.id).value = playerMap
+                    val oldHost = currentData.child("hostId").getValue(String::class.java) ?: return Transaction.abort()
+                    val epoch = currentData.child("hostEpoch").getValue(Long::class.java) ?: 1L
+                    if (epoch != expectedEpoch || oldHost == uid) return Transaction.abort()
+                    currentData.child("hostId").value = uid
+                    newEpoch = epoch + 1L
+                    currentData.child("hostEpoch").value = newEpoch
+                    currentData.child("updatedAt").value = System.currentTimeMillis()
                     return Transaction.success(currentData)
                 }
-
-                override fun onComplete(
-                    error: DatabaseError?,
-                    committed: Boolean,
-                    currentData: DataSnapshot?
-                ) {
-                    if (committed && assignedPlayer != null) {
-                        // Setup presence disconnect
-                        ref.child("players/${player.id}/isConnected").onDisconnect().setValue(false)
-                        ref.child("players/${player.id}/lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
-                        continuation.resume(Result.success(assignedPlayer!!))
-                    } else {
-                        val err = transactionError ?: error?.let { RoomError.NetworkFailure(it.message) } ?: RoomError.NetworkFailure("Transaction failed")
-                        continuation.resume(Result.failure(err))
-                    }
+                override fun onComplete(error: DatabaseError?, committed: Boolean, currentData: DataSnapshot?) {
+                    if (!continuation.isActive) return
+                    if (committed && newEpoch > expectedEpoch) continuation.resume(Result.success(newEpoch))
+                    else continuation.resume(Result.failure(RoomError.NotHost))
                 }
             })
         }
@@ -231,6 +219,13 @@ class FirebaseRoomDataSource(
                 "lastSeen" to ServerValue.TIMESTAMP
             )
             ref.updateChildren(updates).await()
+            if (isConnected) {
+                // onDisconnect operations fire once. Re-register them after every
+                // successful reconnect so a later network loss cannot leave a ghost
+                // seat permanently online.
+                ref.child("isConnected").onDisconnect().setValue(false)
+                ref.child("lastSeen").onDisconnect().setValue(ServerValue.TIMESTAMP)
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -270,6 +265,8 @@ class FirebaseRoomDataSource(
                 "type" to action.type.name,
                 "playerId" to action.playerId,
                 "payload" to action.payload,
+                "expectedVersion" to action.expectedVersion,
+                "expectedHostEpoch" to action.expectedHostEpoch,
                 "timestamp" to ServerValue.TIMESTAMP
             )
             ref.setValue(map).await()
@@ -290,6 +287,8 @@ class FirebaseRoomDataSource(
             val updates = mutableMapOf<String, Any>(
                 "state/raw" to stateJson,
                 "state/version" to state.version,
+                "state/authorityEpoch" to state.authorityEpoch,
+                "state/authorityHostId" to state.authorityHostId,
                 "state/activePlayerIndex" to state.activePlayerIndex,
                 "state/turnPhase" to state.turnPhase.name,
                 "state/updatedAt" to ServerValue.TIMESTAMP
@@ -438,7 +437,10 @@ class FirebaseRoomDataSource(
                         }
                     } else null
 
-                    trySend(RoomSnapshot(meta = meta, players = playersList, gameState = gameState))
+                    if (!ProtocolSafety.isValidMeta(meta, roomId)) return
+                    val safePlayers = playersList.filter { ProtocolSafety.isValidPresence(it) }
+                    val safeGame = gameState?.takeIf { ProtocolSafety.isValidGameState(it, roomId, meta.hostId) }
+                    trySend(RoomSnapshot(meta = meta, players = safePlayers, gameState = safeGame))
                 } catch (e: Exception) {
                     Log.e(tag, "Error parsing room snapshot: ${e.message}", e)
                 }
@@ -470,6 +472,8 @@ class FirebaseRoomDataSource(
                     val type = try { ActionType.valueOf(typeStr) } catch (_: Exception) { ActionType.ROLL_DICE }
                     val playerId = snapshot.child("playerId").getValue(String::class.java) ?: ""
                     val payload = snapshot.child("payload").getValue(String::class.java) ?: ""
+                    val expectedVersion = snapshot.child("expectedVersion").getValue(Long::class.java) ?: -1L
+                    val expectedHostEpoch = snapshot.child("expectedHostEpoch").getValue(Long::class.java) ?: -1L
                     val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
 
                     trySend(
@@ -479,6 +483,8 @@ class FirebaseRoomDataSource(
                             type = type,
                             playerId = playerId,
                             payload = payload,
+                            expectedVersion = expectedVersion,
+                            expectedHostEpoch = expectedHostEpoch,
                             timestamp = timestamp
                         )
                     )

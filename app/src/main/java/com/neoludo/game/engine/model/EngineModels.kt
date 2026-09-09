@@ -141,6 +141,10 @@ data class GameState(
     val ruleSet: LudoRuleSet = LudoRuleSet(),
     val moveHistory: List<MoveRecord> = emptyList(),
     val lastEvent: GameEngineEvent? = null,
+    /** Authority generation. Higher epochs always supersede lower-epoch snapshots. */
+    val authorityEpoch: Long = 1L,
+    /** Logical host that produced this canonical snapshot. Empty only for legacy/local states. */
+    val authorityHostId: String = "",
     val version: Long = 0L
 ) {
     val activePlayer: PlayerState get() = players[activePlayerIndex]

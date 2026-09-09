@@ -1,6 +1,9 @@
 package com.neoludo.game.ui.navigation
 
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -9,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -79,12 +83,13 @@ fun NeoLudoNavHost(
     val profile by app.profileRepository.profile.collectAsState(initial = UserProfile())
     val stats by app.statsRepository.stats.collectAsState(initial = UserStats())
     val settings by app.settingsRepository.settings.collectAsState(initial = GameSettings())
+    var stableOnlineProfile by remember { mutableStateOf<UserProfile?>(null) }
     var activeOnlineClient by remember { mutableStateOf<OnlineRoomClient?>(null) }
     var lastGameRoute by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         // Pin the online identity before any room is created/joined.
-        runCatching { app.profileRepository.ensureStableProfile() }
+        stableOnlineProfile = runCatching { app.profileRepository.ensureStableProfile() }.getOrNull()
     }
     LaunchedEffect(settings.soundVolume, settings.soundEnabled, settings.hapticsEnabled) {
         app.soundController.soundVolume = settings.soundVolume
@@ -136,13 +141,14 @@ fun NeoLudoNavHost(
         composable(Screen.CreateRoom.route) {
             CreateRoomScreen(
                 onCreateRoom = { count, fillBots, rules, color ->
+                    val stableProfile = app.profileRepository.ensureStableProfile()
                     // Firebase when this build ships google-services.json,
                     // otherwise the free public relay — no setup either way.
                     val client = OnlineClientFactory.create(
                         context = context,
-                        localPlayerId = profile.id,
-                        localPlayerName = profile.displayName,
-                        localAvatarId = profile.avatarId,
+                        localPlayerId = stableProfile.id,
+                        localPlayerName = stableProfile.displayName,
+                        localAvatarId = stableProfile.avatarId,
                         preferredColor = color,
                         maxPlayers = count,
                         ruleSet = rules
@@ -164,11 +170,12 @@ fun NeoLudoNavHost(
         composable(Screen.JoinRoom.route) {
             JoinRoomScreen(
                 onJoinRoom = { roomId ->
+                    val stableProfile = app.profileRepository.ensureStableProfile()
                     val client = OnlineClientFactory.create(
                         context = context,
-                        localPlayerId = profile.id,
-                        localPlayerName = profile.displayName,
-                        localAvatarId = profile.avatarId,
+                        localPlayerId = stableProfile.id,
+                        localPlayerName = stableProfile.displayName,
+                        localAvatarId = stableProfile.avatarId,
                         initialRoomId = roomId,
                         maxPlayers = 4
                     )
@@ -188,36 +195,64 @@ fun NeoLudoNavHost(
             arguments = listOf(navArgument("roomId") { type = NavType.StringType })
         ) { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: "NL-1234"
-            val client = activeOnlineClient ?: remember(roomId) {
-                OnlineClientFactory.create(
-                    context = context,
-                    localPlayerId = profile.id,
-                    localPlayerName = profile.displayName,
-                    localAvatarId = profile.avatarId,
-                    initialRoomId = roomId,
-                    maxPlayers = 4,
-                    ruleSet = LudoRuleSet(
-                        autoMoveSinglePiece = settings.autoMoveSinglePiece,
-                        penalty3xSix = settings.penalty3xSix,
-                        turnTimerSeconds = settings.turnTimerSeconds
+            val recoveryProfile = stableOnlineProfile
+            val recoveredClient = if (activeOnlineClient == null && recoveryProfile != null) {
+                remember(roomId, recoveryProfile.id) {
+                    OnlineClientFactory.create(
+                        context = context,
+                        localPlayerId = recoveryProfile.id,
+                        localPlayerName = recoveryProfile.displayName,
+                        localAvatarId = recoveryProfile.avatarId,
+                        initialRoomId = roomId,
+                        maxPlayers = 4,
+                        ruleSet = LudoRuleSet(
+                            autoMoveSinglePiece = settings.autoMoveSinglePiece,
+                            penalty3xSix = settings.penalty3xSix,
+                            turnTimerSeconds = settings.turnTimerSeconds
+                        )
                     )
+                }
+            } else null
+            val client = activeOnlineClient ?: recoveredClient
+
+            // Nav state can be restored after Android kills the process while
+            // the app is backgrounded. Recreate the transport and reclaim the
+            // persisted player seat instead of showing a permanently empty lobby.
+            LaunchedEffect(roomId, recoveredClient) {
+                if (activeOnlineClient == null && recoveredClient != null) {
+                    val result = recoveredClient.joinRoom(roomId)
+                    if (result.isSuccess) {
+                        activeOnlineClient = recoveredClient
+                    } else {
+                        recoveredClient.release()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    }
+                }
+            }
+
+            if (client == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LobbyWaitingRoomScreen(
+                    roomId = roomId,
+                    client = client,
+                    localPlayerId = client.currentUid,
+                    onStartGame = {
+                        navController.navigate(Screen.Game.createRoute("ONLINE", roomId, client.maxPlayers, "NORMAL", client.preferredColor.name)) {
+                            popUpTo(Screen.Home.route)
+                        }
+                    },
+                    onBack = {
+                        activeOnlineClient?.release()
+                        activeOnlineClient = null
+                        navController.popBackStack()
+                    }
                 )
             }
-            LobbyWaitingRoomScreen(
-                roomId = roomId,
-                client = client,
-                localPlayerId = profile.id,
-                onStartGame = {
-                    navController.navigate(Screen.Game.createRoute("ONLINE", roomId, client.maxPlayers, "NORMAL", client.preferredColor.name)) {
-                        popUpTo(Screen.Home.route)
-                    }
-                },
-                onBack = {
-                    activeOnlineClient?.release()
-                    activeOnlineClient = null
-                    navController.popBackStack()
-                }
-            )
         }
 
         composable(
@@ -242,7 +277,8 @@ fun NeoLudoNavHost(
                 lastGameRoute = Screen.Game.createRoute(mode, roomId, playerCount, difficultyStr, colorStr)
             }
 
-            val client = remember(mode, roomId, playerCount, difficulty, chosenColor) {
+            val recoveryProfile = stableOnlineProfile
+            val client = remember(mode, roomId, playerCount, difficulty, chosenColor, activeOnlineClient, recoveryProfile?.id) {
                 when (mode) {
                     "AI" -> BotMultiplayerClient(
                         humanName = profile.displayName,
@@ -256,11 +292,11 @@ fun NeoLudoNavHost(
                             turnTimerSeconds = settings.turnTimerSeconds
                         )
                     )
-                    "ONLINE" -> activeOnlineClient ?: OnlineClientFactory.create(
+                    "ONLINE" -> activeOnlineClient ?: recoveryProfile?.let { stable -> OnlineClientFactory.create(
                         context = context,
-                        localPlayerId = profile.id,
-                        localPlayerName = profile.displayName,
-                        localAvatarId = profile.avatarId,
+                        localPlayerId = stable.id,
+                        localPlayerName = stable.displayName,
+                        localAvatarId = stable.avatarId,
                         preferredColor = chosenColor,
                         initialRoomId = roomId,
                         maxPlayers = playerCount,
@@ -269,7 +305,7 @@ fun NeoLudoNavHost(
                             penalty3xSix = settings.penalty3xSix,
                             turnTimerSeconds = settings.turnTimerSeconds
                         )
-                    )
+                    ) }
                     else -> LocalMultiplayerClient(
                         playerCount = playerCount,
                         ruleSet = LudoRuleSet(
@@ -281,7 +317,24 @@ fun NeoLudoNavHost(
                 }
             }
 
-            GameScreen(
+            LaunchedEffect(mode, roomId, client, activeOnlineClient) {
+                if (mode == "ONLINE" && activeOnlineClient == null && client is OnlineRoomClient) {
+                    val result = client.joinRoom(roomId)
+                    if (result.isSuccess) activeOnlineClient = client
+                    else {
+                        client.release()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    }
+                }
+            }
+
+            if (client == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else GameScreen(
                 client = client,
                 soundController = app.soundController,
                 hapticController = app.hapticController,
@@ -376,7 +429,8 @@ fun NeoLudoNavHost(
 
         composable(Screen.Friends.route) {
             FriendsScreen(
-                friendRepository = app.friendRepository,
+                onCreateRoom = { navController.navigate(Screen.CreateRoom.route) },
+                onJoinRoom = { navController.navigate(Screen.JoinRoom.route) },
                 onBack = { navController.popBackStack() }
             )
         }

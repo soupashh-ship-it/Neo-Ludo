@@ -1,8 +1,7 @@
 package com.neoludo.game.ui.friends
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,52 +12,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoColors
-import com.neoludo.game.core.model.Friend
-import com.neoludo.game.data.repository.FriendRepository
 
+/**
+ * Production online-play hub.
+ *
+ * Older builds showed a local-only "friends" list that looked online and had an
+ * unwired Invite button.  That was misleading: Neo Ludo's real invitation
+ * mechanism is a private room code shared from the lobby.  This screen only
+ * exposes functionality backed by the actual online-room transports.
+ */
 @Composable
 fun FriendsScreen(
-    friendRepository: FriendRepository,
+    onCreateRoom: () -> Unit,
+    onJoinRoom: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val friends by friendRepository.friends.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
-    var friendIdInput by remember { mutableStateOf("") }
-    var friendNameInput by remember { mutableStateOf("") }
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -70,8 +60,6 @@ fun FriendsScreen(
                 .padding(horizontal = 20.dp)
         ) {
             Spacer(modifier = Modifier.height(36.dp))
-
-            // Top Bar
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -82,7 +70,6 @@ fun FriendsScreen(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -90,222 +77,83 @@ fun FriendsScreen(
                         tint = Color.White
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Friends",
+                    text = "Play With Friends",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
+                    fontSize = 20.sp,
+                    modifier = Modifier.padding(start = 16.dp)
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(
-                    onClick = { showAddDialog = true },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = NeoLudoColors.ObsidianSurfaceCard,
+                border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PersonAdd,
-                        contentDescription = "Add Friend",
-                        tint = NeoLudoColors.EmeraldGreen
+                        imageVector = Icons.Default.Groups,
+                        contentDescription = null,
+                        tint = NeoLudoColors.EmeraldGreen,
+                        modifier = Modifier.size(38.dp)
                     )
+                    Text(
+                        text = "Private online rooms",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Create a room and share its code with up to three friends, or join a code they sent you. Phones do not need to be on the same Wi-Fi.",
+                        color = NeoLudoColors.ObsidianTextMuted,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            tint = NeoLudoColors.CobaltBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "The lobby has a Share Code button.",
+                            color = Color.White,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "ONLINE FRIENDS (${friends.count { it.isOnline }}/${friends.size})",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+            Spacer(modifier = Modifier.height(20.dp))
+            NeoLudoButton(
+                text = "Create Private Room",
+                onClick = onCreateRoom,
+                modifier = Modifier.fillMaxWidth()
             )
-
             Spacer(modifier = Modifier.height(12.dp))
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                if (friends.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "No friends yet",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Tap + to add someone you know.",
-                                color = NeoLudoColors.BrutalistTextMutedOnInk,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                } else {
-                    items(friends, key = { it.id }) { friend ->
-                        FriendCard(
-                            friend = friend,
-                            onInvite = { /* TODO: wire room invite via share intent */ },
-                            onRemove = { friendRepository.removeFriend(friend.id) }
-                        )
-                    }
-                }
-            }
-        }
-
-        if (showAddDialog) {
-            AlertDialog(
-                onDismissRequest = { showAddDialog = false },
-                title = { Text("Add Friend", color = Color.White, fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = friendNameInput,
-                            onValueChange = { friendNameInput = it },
-                            label = { Text("Friend Name") },
-                            textStyle = TextStyle(color = Color.White),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = NeoLudoColors.ObsidianSurface,
-                                unfocusedContainerColor = NeoLudoColors.ObsidianSurface,
-                                focusedBorderColor = NeoLudoColors.CobaltBlue,
-                                unfocusedBorderColor = NeoLudoColors.ObsidianBorder
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = friendIdInput,
-                            onValueChange = { friendIdInput = it },
-                            label = { Text("User ID (e.g. user_5821)") },
-                            textStyle = TextStyle(color = Color.White),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = NeoLudoColors.ObsidianSurface,
-                                unfocusedContainerColor = NeoLudoColors.ObsidianSurface,
-                                focusedBorderColor = NeoLudoColors.CobaltBlue,
-                                unfocusedBorderColor = NeoLudoColors.ObsidianBorder
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+            NeoLudoButton(
+                text = "Join With Room Code",
+                onClick = onJoinRoom,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (friendNameInput.isNotBlank()) {
-                            friendRepository.addFriend(
-                                id = friendIdInput.ifBlank { "user_" + (1000..9999).random() },
-                                name = friendNameInput,
-                                avatarId = (1..8).random()
-                            )
-                            showAddDialog = false
-                            friendNameInput = ""
-                            friendIdInput = ""
-                        }
-                    }) {
-                        Text("Add", color = NeoLudoColors.EmeraldGreen, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showAddDialog = false }) {
-                        Text("Cancel", color = Color.White)
-                    }
-                },
-                containerColor = NeoLudoColors.ObsidianSurfaceCard
+                modifier = Modifier.fillMaxWidth()
             )
-        }
-    }
-}
-
-@Composable
-private fun FriendCard(
-    friend: Friend,
-    onInvite: () -> Unit,
-    onRemove: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .border(2.dp, NeoLudoColors.BrutalistLine, RoundedCornerShape(14.dp)),
-        color = NeoLudoColors.BrutalistInkSoft
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(contentAlignment = Alignment.BottomEnd) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.CobaltBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = friend.displayName.take(1).uppercase(),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(if (friend.isOnline) NeoLudoColors.EmeraldGreen else Color.Gray)
-                        .border(1.5.dp, NeoLudoColors.ObsidianSurfaceCard, CircleShape)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = friend.displayName,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-                Text(
-                    text = friend.statusMessage,
-                    color = if (friend.isOnline) NeoLudoColors.EmeraldGreen else NeoLudoColors.ObsidianTextMuted,
-                    fontSize = 12.sp
-                )
-            }
-
-            if (friend.isOnline) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NeoLudoColors.BrutalistBlue)
-                        .border(2.dp, NeoLudoColors.BrutalistLine, RoundedCornerShape(10.dp))
-                        .clickable(onClick = onInvite)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "Invite",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            } else {
-                androidx.compose.material3.TextButton(onClick = onRemove) {
-                    Text("Remove", color = NeoLudoColors.BrutalistTextMutedOnInk, fontSize = 12.sp)
-                }
-            }
         }
     }
 }

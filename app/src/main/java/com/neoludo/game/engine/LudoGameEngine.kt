@@ -27,7 +27,9 @@ object LudoGameEngine {
     fun createInitialState(
         gameId: String,
         playerConfigs: List<InitialPlayerConfig>,
-        ruleSet: LudoRuleSet = LudoRuleSet()
+        ruleSet: LudoRuleSet = LudoRuleSet(),
+        authorityEpoch: Long = 1L,
+        authorityHostId: String = ""
     ): GameState {
         require(playerConfigs.size in 2..4) { "Player count must be between 2 and 4" }
         require(playerConfigs.map { it.id }.toSet().size == playerConfigs.size) {
@@ -59,7 +61,9 @@ object LudoGameEngine {
             ranking = emptyList(),
             ruleSet = ruleSet,
             moveHistory = emptyList(),
-            lastEvent = null
+            lastEvent = null,
+            authorityEpoch = authorityEpoch.coerceAtLeast(1L),
+            authorityHostId = authorityHostId
         )
     }
 
@@ -88,7 +92,7 @@ object LudoGameEngine {
             val nextIndex = getNextActivePlayerIndex(state.players, state.activePlayerIndex)
             return state.copy(
                 activePlayerIndex = nextIndex,
-                diceState = DiceState(value = 0, isRolled = false, consecutiveSixes = 0, canRoll = true),
+                diceState = DiceState(value = 6, isRolled = false, consecutiveSixes = 0, canRoll = true),
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
                 lastEvent = GameEngineEvent.TurnForfeited3xSix(activePlayer.color),
                 version = state.version + 1
@@ -98,12 +102,25 @@ object LudoGameEngine {
         val legalMoves = MoveValidator.getLegalMoves(activePlayer, rollValue, state.players)
 
         if (legalMoves.isEmpty()) {
-            val nextIndex = getNextActivePlayerIndex(state.players, state.activePlayerIndex)
+            // A six grants another roll even when no token can legally move. Keep
+            // the streak so a third consecutive six still forfeits the turn.
+            val bonusRoll = rollValue == 6
+            val nextIndex = if (bonusRoll) state.activePlayerIndex
+            else getNextActivePlayerIndex(state.players, state.activePlayerIndex)
             return state.copy(
                 activePlayerIndex = nextIndex,
-                diceState = DiceState(value = 0, isRolled = false, consecutiveSixes = 0, canRoll = true),
+                diceState = DiceState(
+                    value = rollValue,
+                    isRolled = false,
+                    consecutiveSixes = if (bonusRoll) newConsecutiveSixes else 0,
+                    canRoll = true
+                ),
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
-                lastEvent = GameEngineEvent.TurnPassedNoMoves(activePlayer.color),
+                lastEvent = if (bonusRoll) {
+                    GameEngineEvent.ExtraTurnGranted(activePlayer.color, "Rolled a 6")
+                } else {
+                    GameEngineEvent.TurnPassedNoMoves(activePlayer.color)
+                },
                 version = state.version + 1
             )
         }

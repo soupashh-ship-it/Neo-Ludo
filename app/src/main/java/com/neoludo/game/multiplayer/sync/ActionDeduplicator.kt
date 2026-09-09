@@ -29,11 +29,13 @@ class ActionDeduplicator(
     private var lastSequenceGlobal: Long = 0L
 
     companion object {
-        // Upper bound for per-sender sequences. Client counters are seeded
-        // with epoch seconds (so a rejoined app never replays from 0 and gets
-        // its actions dropped as stale); only absurd values are rejected.
-        // A forged huge sequence can only DoS its own sender's future actions.
-        const val MAX_SEQUENCE: Long = 9_999_999_999L
+        // Firebase numbers are IEEE-754 doubles. Keep sequences within the exact
+        // JavaScript integer range while leaving enough space for a restart-safe
+        // millisecond seed (epochMillis * 1024).
+        const val MAX_SEQUENCE: Long = 9_007_199_254_740_991L
+
+        fun restartSafeSeed(nowMillis: Long = System.currentTimeMillis()): Long =
+            (nowMillis.coerceIn(1L, (MAX_SEQUENCE - 1_000_000L) / 1024L) * 1024L)
     }
 
     @Synchronized

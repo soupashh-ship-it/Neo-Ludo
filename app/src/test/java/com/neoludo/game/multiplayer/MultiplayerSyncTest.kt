@@ -88,7 +88,7 @@ class MultiplayerSyncTest {
         assertThat(initResult.events.first().type).isEqualTo(NetworkEventType.GAME_STARTED)
 
         // p1 (Active) submits ROLL_DICE with forced 6 (deterministic: yard piece exits)
-        val rollAction = NetworkAction(actionId = "act_r1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6")
+        val rollAction = NetworkAction(actionId = "act_r1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6", expectedVersion = 0L, expectedHostEpoch = 1L)
         val rollResult = processor.processAction(rollAction, state0, meta)
         assertThat(rollResult).isNotNull()
 
@@ -111,7 +111,7 @@ class MultiplayerSyncTest {
         val state0 = initResult.updatedState
 
         // p2 attempts to roll out of turn
-        val badAction = NetworkAction(actionId = "act_bad", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p2")
+        val badAction = NetworkAction(actionId = "act_bad", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p2", expectedVersion = 0L, expectedHostEpoch = 1L)
         val badResult = processor.processAction(badAction, state0, meta)
         assertThat(badResult).isNull() // Rejection
     }
@@ -137,7 +137,7 @@ class MultiplayerSyncTest {
         )
 
         // Red moves piece 0 with roll 3 (7 + 3 = 10 -> lands on Green)
-        val moveAction = NetworkAction(actionId = "act_m1", sequence = 6L, type = ActionType.MOVE_PIECE, playerId = "p1", payload = "0")
+        val moveAction = NetworkAction(actionId = "act_m1", sequence = 6L, type = ActionType.MOVE_PIECE, playerId = "p1", payload = "0", expectedVersion = 5L, expectedHostEpoch = 1L)
         val result = processor.processAction(moveAction, state, meta)
         assertThat(result).isNotNull()
 
@@ -272,7 +272,7 @@ class MultiplayerSyncTest {
         )
 
         // Roll forced 6 as 3rd consecutive 6
-        val rollAction = NetworkAction(actionId = "act_6_3", sequence = 11L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6")
+        val rollAction = NetworkAction(actionId = "act_6_3", sequence = 11L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6", expectedVersion = 10L, expectedHostEpoch = 1L)
         val result = processor.processAction(rollAction, state, meta)
         assertThat(result).isNotNull()
 
@@ -299,8 +299,8 @@ class MultiplayerSyncTest {
         // Attacker posts ROLL with payload 6 fifty times — none may force a 6 deterministically
         // (prod ignores payload; result is random). We assert only that processing succeeds
         // and never crashes, and that a blank payload behaves identically.
-        val forged = NetworkAction(actionId = "forge_1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6")
-        val legit = NetworkAction(actionId = "legit_1", sequence = 2L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "")
+        val forged = NetworkAction(actionId = "forge_1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "6", expectedVersion = 0L, expectedHostEpoch = 1L)
+        val legit = NetworkAction(actionId = "legit_1", sequence = 2L, type = ActionType.ROLL_DICE, playerId = "p1", payload = "", expectedVersion = 0L, expectedHostEpoch = 1L)
         assertThat(processor.processAction(forged, state, meta)).isNotNull()
         // Fresh processor (empty dedup) accepts the legit action too
         val processor2 = AuthoritativeGameProcessor()
@@ -321,7 +321,7 @@ class MultiplayerSyncTest {
             diceState = com.neoludo.game.engine.model.DiceState(value = 4, isRolled = true, canRoll = false),
             version = 7L
         )
-        val replayedPass = NetworkAction(actionId = "pass_replay", sequence = 8L, type = ActionType.PASS_TURN, playerId = "p1", payload = "v=7")
+        val replayedPass = NetworkAction(actionId = "pass_replay", sequence = 8L, type = ActionType.PASS_TURN, playerId = "p1", payload = "v=7", expectedVersion = 7L, expectedHostEpoch = 1L)
         assertThat(processor.processAction(replayedPass, midMove, meta)).isNull()
     }
 
@@ -356,7 +356,7 @@ class MultiplayerSyncTest {
         assertThat(deviceAState.version).isEqualTo(deviceBState.version)
 
         // 2. Alice on Device A rolls a 6
-        val rollAction = NetworkAction(actionId = "act_a1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "host_a", payload = "6")
+        val rollAction = NetworkAction(actionId = "act_a1", sequence = 1L, type = ActionType.ROLL_DICE, playerId = "host_a", payload = "6", expectedVersion = deviceAState.version, expectedHostEpoch = meta.hostEpoch)
         val step1 = processor.processAction(rollAction, deviceAState, meta)!!
         deviceAState = step1.updatedState
         deviceBState = step1.updatedState // Broadcast received on Device B
@@ -365,7 +365,7 @@ class MultiplayerSyncTest {
         assertThat(deviceAState.version).isEqualTo(deviceBState.version)
 
         // 3. Alice on Device A moves yard piece out to path
-        val moveAction = NetworkAction(actionId = "act_a2", sequence = 2L, type = ActionType.MOVE_PIECE, playerId = "host_a", payload = "0")
+        val moveAction = NetworkAction(actionId = "act_a2", sequence = 2L, type = ActionType.MOVE_PIECE, playerId = "host_a", payload = "0", expectedVersion = deviceAState.version, expectedHostEpoch = meta.hostEpoch)
         val step2 = processor.processAction(moveAction, deviceAState, meta)!!
         deviceAState = step2.updatedState
         deviceBState = step2.updatedState // Broadcast received on Device B

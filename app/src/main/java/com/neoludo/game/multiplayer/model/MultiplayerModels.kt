@@ -91,6 +91,10 @@ data class NetworkAction(
     val type: ActionType = ActionType.ROLL_DICE,
     val playerId: String = "",
     val payload: String = "",
+    /** Canonical game revision the sender acted on. -1 keeps old snapshots decodable. */
+    val expectedVersion: Long = -1L,
+    /** Host generation the sender observed. -1 keeps old protocol messages decodable. */
+    val expectedHostEpoch: Long = -1L,
     val timestamp: Long = 0L
 )
 
@@ -133,6 +137,8 @@ sealed class RoomError(val userMessage: String) : Exception(userMessage) {
     data object NotHost : RoomError("Only the room host can perform this action.")
     data object NotYourTurn : RoomError("It is not your turn.")
     data object IllegalMove : RoomError("Selected move is not valid.")
+    data object PlayersNotReady : RoomError("All connected players must be ready before the match starts.")
+    data object StaleAction : RoomError("The game changed before that action arrived. Synced to the latest state.")
     data object AuthenticationRequired : RoomError("Network connection / authentication required.")
     data class NetworkFailure(val details: String) : RoomError("Network error: $details")
 }
