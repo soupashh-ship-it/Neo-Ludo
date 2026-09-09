@@ -310,18 +310,18 @@ fun GameScreen(
             .fillMaxSize()
             .background(palette.background)
     ) {
-        // Floodlight spotlight — stadium identity, zero gameplay impact.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(360.dp)
                 .background(
                     androidx.compose.ui.graphics.Brush.radialGradient(
                         colors = listOf(
-                            StadiumColors.Spotlight.copy(alpha = 0.30f),
+                            StadiumColors.Spotlight.copy(alpha = 0.28f),
                             Color.Transparent
                         ),
-                        center = Offset(0.5f, 0.0f),
-                        radius = 1.1f
+                        center = Offset(600f, 0f),
+                        radius = 900f
                     )
                 )
         )
@@ -384,19 +384,15 @@ fun GameScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.weight(1f, fill = true))
-
-            // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics & Custom Skins
-            // Centered in leftover space (width-capped on tablets, height-capped
-            // on short screens); tray stays anchored at the bottom.
+            // 3. Canvas Ludo Game Board — centered; board never squashes the bottom bar.
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                val boardSide = minOf(maxWidth, maxHeight, StadiumDimens.BoardMax)
-                    .coerceAtLeast(120.dp)
+                val boardSide = minOf(maxWidth, (maxHeight * 0.92f), StadiumDimens.BoardMax)
+                    .coerceIn(160.dp, StadiumDimens.BoardMax)
             Box(
                 modifier = Modifier
                     .size(boardSide)

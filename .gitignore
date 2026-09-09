@@ -59,3 +59,11 @@ captures/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Kotlin incremental compilation cache (IDE/CLI, never commit)
+.kotlin/
+
+# Local screenshots / debug artifacts
+*.png
+!app/src/main/res/drawable/*.png
+!app/src/main/res/mipmap*/*.png
