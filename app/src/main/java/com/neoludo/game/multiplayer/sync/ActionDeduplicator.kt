@@ -29,7 +29,11 @@ class ActionDeduplicator(
     private var lastSequenceGlobal: Long = 0L
 
     companion object {
-        const val MAX_SEQUENCE: Long = 1_000_000_000L
+        // Upper bound for per-sender sequences. Client counters are seeded
+        // with epoch seconds (so a rejoined app never replays from 0 and gets
+        // its actions dropped as stale); only absurd values are rejected.
+        // A forged huge sequence can only DoS its own sender's future actions.
+        const val MAX_SEQUENCE: Long = 9_999_999_999L
     }
 
     @Synchronized

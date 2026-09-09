@@ -53,7 +53,6 @@ import com.neoludo.game.engine.model.PlayerColor
 fun HomeScreen(
     profile: UserProfile,
     stats: UserStats,
-    onStartOnline: (playerCount: Int) -> Unit,
     onNavigateFriends: () -> Unit,
     onNavigateJoinRoom: () -> Unit = onNavigateFriends,
     onStartLocal: (playerCount: Int) -> Unit,
@@ -68,7 +67,6 @@ fun HomeScreen(
 ) {
     var showAiSetupDialog by remember { mutableStateOf(false) }
     var showLocalSetupDialog by remember { mutableStateOf(false) }
-    var showQuickOnlineSetupDialog by remember { mutableStateOf(false) }
     var dailyClaimed by rememberSaveable { mutableStateOf(false) }
 
     Box(
@@ -143,15 +141,6 @@ fun HomeScreen(
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    GameModeTile(
-                        title = "Quick Online Match",
-                        subtitle = "Instant multiplayer match with random players",
-                        icon = Icons.Default.Public,
-                        accentColor = NeoLudoColors.CobaltBlue,
-                        onClick = { showQuickOnlineSetupDialog = true },
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
 
@@ -411,72 +400,6 @@ fun HomeScreen(
                         onClick = {
                             showLocalSetupDialog = false
                             onStartLocal(selectedCount)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-    }
-
-    // Quick Online Dialog
-    if (showQuickOnlineSetupDialog) {
-        var selectedCount by remember { mutableIntStateOf(4) }
-
-        Dialog(onDismissRequest = { showQuickOnlineSetupDialog = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = NeoLudoColors.ObsidianSurfaceCard,
-                border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = "Quick Online Match",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text("SELECT PLAYERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeoLudoColors.ObsidianTextMuted)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(2, 3, 4).forEach { count ->
-                            val isSelected = selectedCount == count
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { selectedCount = count },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) NeoLudoColors.CobaltBlue else Color(0xFF1E293B)
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "$count Players",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-                    NeoLudoButton(
-                        text = "Find Match",
-                        accentColor = NeoLudoColors.CobaltBlue,
-                        onClick = {
-                            showQuickOnlineSetupDialog = false
-                            onStartOnline(selectedCount)
                         },
                         modifier = Modifier.fillMaxWidth()
                     )

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- Same as backup_rules.xml: player identity and local state must NEVER
+         clone to another device (shared Google account = shared player ID =
+         stolen seats). Applies on Android 12+ for both cloud backup and
+         device-to-device transfer. -->
+    <cloud-backup>
+        <exclude domain="sharedpref" path="neoludo_prefs.preferences_pb" />
+        <exclude domain="sharedpref" path="neoludo_prefs" />
+        <exclude domain="file" path="datastore/neoludo_prefs.preferences_pb" />
+        <exclude domain="file" path="datastore/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="neoludo_prefs.preferences_pb" />
+        <exclude domain="sharedpref" path="neoludo_prefs" />
+        <exclude domain="file" path="datastore/neoludo_prefs.preferences_pb" />
+        <exclude domain="file" path="datastore/" />
+    </device-transfer>
+</data-extraction-rules>

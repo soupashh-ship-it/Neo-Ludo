@@ -76,7 +76,10 @@ class MqttMultiplayerClient(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val sequenceCounter = AtomicLong(0L)
+    // Seeded with epoch seconds (not 0): if the app restarts mid-game and
+    // rejoins, its actions must NOT look older than pre-restart ones, or the
+    // host's deduplicator drops every tap as stale.
+    private val sequenceCounter = AtomicLong(System.currentTimeMillis() / 1000L)
 
     private val hostElectionManager = HostElectionManager()
     private val authoritativeProcessor = AuthoritativeGameProcessor()
@@ -274,10 +277,13 @@ class MqttMultiplayerClient(
             assigned = existing.copy(isConnected = true, lastSeen = now)
             currentAssignedColor = assigned.color
         } else {
-            if (known.size >= meta.maxPlayers) {
+            // Ghost seats (crashed/leaked presences) don't count: only live
+            // seats fill the room or reserve colors.
+            val live = known.values.filter { isSeatLive(it, now) }
+            if (live.size >= meta.maxPlayers) {
                 return@withContext Result.failure(RoomError.RoomFull)
             }
-            val used = known.values.map { it.color }.toSet()
+            val used = live.map { it.color }.toSet()
             val color = if (preferredColor !in used) preferredColor
             else listOf(PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE)
                 .firstOrNull { it !in used } ?: preferredColor
@@ -389,7 +395,9 @@ class MqttMultiplayerClient(
 
     override suspend fun rollDice(): Result<Unit> = withContext(Dispatchers.IO) {
         val snap = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val state = _gameState.value ?: return@withContext Result.failure(
+            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
+        )
         if (!isLocalTurn(snap, state)) return@withContext Result.failure(RoomError.NotYourTurn)
         postAction(
             snap.meta.roomId,
@@ -406,7 +414,9 @@ class MqttMultiplayerClient(
 
     override suspend fun movePiece(pieceId: Int): Result<Unit> = withContext(Dispatchers.IO) {
         val snap = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val state = _gameState.value ?: return@withContext Result.failure(
+            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
+        )
         if (!isLocalTurn(snap, state)) return@withContext Result.failure(RoomError.NotYourTurn)
         postAction(
             snap.meta.roomId,
@@ -862,6 +872,16 @@ class MqttMultiplayerClient(
         return res
     }
 }
+
+/**
+ * A seat counts as occupied when connected or heartbeating recently.
+ * Stale offline presences are broker litter (crashes, killed apps) — they
+ * must neither fill the room nor reserve colors for new joiners.
+ */
+internal const val SEAT_LIVE_WINDOW_MS = 60_000L
+
+internal fun isSeatLive(p: PlayerPresence, now: Long = System.currentTimeMillis()): Boolean =
+    p.isConnected || (now - p.lastSeen) < SEAT_LIVE_WINDOW_MS
 
 /**
  * Host cover rule: the host may act for bots, disconnected players and

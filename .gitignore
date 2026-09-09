@@ -3,6 +3,7 @@
 *.aab
 *.ap_
 *.dex
+*.idsig
 
 # Keep release apk directory
 !release-apk/*.apk

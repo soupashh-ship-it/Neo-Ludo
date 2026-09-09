@@ -110,10 +110,6 @@ fun NeoLudoNavHost(
             HomeScreen(
                 profile = profile,
                 stats = stats,
-                onStartOnline = { count ->
-                    val code = "ON-" + (1000..9999).random()
-                    navController.navigate(Screen.Game.createRoute("ONLINE", code, count, "NORMAL", "RED"))
-                },
                 onNavigateFriends = {
                     navController.navigate(Screen.CreateRoom.route)
                 },

@@ -70,7 +70,9 @@ class FirebaseMultiplayerClient(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val sequenceCounter = AtomicLong(0L)
+    // Seeded with epoch seconds (not 0): a rejoined app must not replay
+    // from 0 and get its actions dropped as stale by the host deduplicator.
+    private val sequenceCounter = AtomicLong(System.currentTimeMillis() / 1000L)
 
     private val roomRepo = RoomRepository(roomDataSource)
     private val actionRepo = ActionRepository(roomDataSource)
@@ -347,7 +349,15 @@ class FirebaseMultiplayerClient(
             return@withContext Result.failure(RoomError.NotHost)
         }
 
-        val initResult = authoritativeProcessor.initializeGame(snapshot.meta, snapshot.players)
+        val players = sanitizePlayersForStart(snapshot.players)
+            ?: return@withContext Result.failure(
+                RoomError.NetworkFailure("Need 2 to 4 players with different colors to start. Wait for everyone to join and retry.")
+            )
+        val initResult = runCatching { authoritativeProcessor.initializeGame(snapshot.meta, players) }.getOrElse {
+            return@withContext Result.failure(
+                RoomError.NetworkFailure("Need 2 to 4 players with different colors to start. Wait for everyone to join and retry.")
+            )
+        }
         _gameState.value = initResult.updatedState
         val pubResult = gameRepo.publishGameState(
             snapshot.meta.roomId,
@@ -367,11 +377,13 @@ class FirebaseMultiplayerClient(
 
     override suspend fun rollDice(): Result<Unit> = withContext(Dispatchers.IO) {
         val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val state = _gameState.value ?: return@withContext Result.failure(
+            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
+        )
         val active = state.activePlayer
 
         val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
-        if (active.id != currentUid && !isHost) {
+        if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
             return@withContext Result.failure(RoomError.NotYourTurn)
         }
 
@@ -389,11 +401,13 @@ class FirebaseMultiplayerClient(
 
     override suspend fun movePiece(pieceId: Int): Result<Unit> = withContext(Dispatchers.IO) {
         val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(RoomError.GameAlreadyStarted)
+        val state = _gameState.value ?: return@withContext Result.failure(
+            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
+        )
         val active = state.activePlayer
 
         val isHost = hostElectionManager.isLocalPlayerHost(currentUid, snapshot.meta, snapshot.players)
-        if (active.id != currentUid && !isHost) {
+        if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
             return@withContext Result.failure(RoomError.NotYourTurn)
         }
 
