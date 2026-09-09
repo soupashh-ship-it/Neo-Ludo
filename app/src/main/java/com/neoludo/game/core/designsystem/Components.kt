@@ -42,23 +42,23 @@ import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.engine.model.PlayerState
 
 /**
- * Club Brutalist primary button — the single button system.
- * Solid fill + 2px ink border + 14dp radius. Press = scale 0.96 + 2px translate.
- * Zero gradients. 52dp height (>= 48dp touch target).
+ * Stadium primary button — the single button system.
+ * Solid fill + 14dp radius. Press = scale 0.96.
+ * One accent (stadium blue). 52dp height (>= 48dp touch target).
  */
 @Composable
 fun NeoLudoButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    accentColor: Color = NeoLudoColors.BrutalistBlue,
+    accentColor: Color = StadiumColors.Accent,
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val contentColor = when (accentColor) {
-        NeoLudoColors.AmberYellow, NeoLudoColors.BrutalistAmber -> NeoLudoColors.BrutalistInk
+        NeoLudoColors.AmberYellow, NeoLudoColors.BrutalistAmber, StadiumColors.Gold -> NeoLudoColors.BrutalistInk
         else -> Color.White
     }
 
@@ -76,7 +76,7 @@ fun NeoLudoButton(
             ),
         shape = MaterialTheme.shapes.medium,
         color = if (enabled) accentColor else NeoLudoColors.BrutalistDisabledFill,
-        border = BorderStroke(2.dp, NeoLudoColors.BrutalistLine)
+        border = BorderStroke(1.dp, StadiumColors.BorderBright)
     ) {
         Box(
             modifier = Modifier.padding(horizontal = 24.dp),
@@ -113,15 +113,15 @@ fun NeoLudoSectionLabel(
         text = text,
         modifier = modifier,
         style = MaterialTheme.typography.labelMedium,
-        color = NeoLudoColors.BrutalistTextMutedOnInk
+        color = StadiumColors.TextMuted
     )
 }
 
 @Composable
 fun NeoLudoCard(
     modifier: Modifier = Modifier,
-    borderColor: Color = NeoLudoColors.BrutalistLine,
-    backgroundColor: Color = NeoLudoColors.BrutalistInkSoft,
+    borderColor: Color = StadiumColors.Border,
+    backgroundColor: Color = StadiumColors.Card,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -144,22 +144,20 @@ fun PlayerPlate(
     modifier: Modifier = Modifier,
     motionEnabled: Boolean = false
 ) {
-    // Brutalist: static 2px ink/player border. No infinite halo pulse by default —
-    // pass motionEnabled=true only when reduced-motion is off AND turn needs emphasis.
-    // (Previous infiniteRepeatable pulse ignored prefers-reduced-motion.)
+    // Stadium: quiet card, player-color border only on the active turn.
     val playerColor = NeoLudoColors.getBrutalistPlayerColor(player.color)
 
     val borderModifier = if (isActiveTurn) {
-        Modifier.border(2.dp, playerColor, MaterialTheme.shapes.medium)
+        Modifier.border(1.dp, playerColor, MaterialTheme.shapes.medium)
     } else {
-        Modifier.border(2.dp, NeoLudoColors.BrutalistLine, MaterialTheme.shapes.medium)
+        Modifier.border(1.dp, StadiumColors.Border, MaterialTheme.shapes.medium)
     }
 
     Surface(
         modifier = modifier
             .then(borderModifier)
             .clip(MaterialTheme.shapes.medium),
-        color = if (isActiveTurn) NeoLudoColors.BrutalistInkSoft else NeoLudoColors.BrutalistInk,
+        color = if (isActiveTurn) StadiumColors.CardElevated else StadiumColors.Card,
         shape = MaterialTheme.shapes.medium,
         border = null
     ) {
@@ -200,7 +198,7 @@ fun PlayerPlate(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = player.name,
-                        color = NeoLudoColors.BrutalistTextOnInk,
+                        color = StadiumColors.TextPrimary,
                         fontWeight = if (isActiveTurn) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                         maxLines = 1,
@@ -211,12 +209,12 @@ fun PlayerPlate(
                         Icon(
                             imageVector = Icons.Default.Star,
                             contentDescription = "Rank",
-                            tint = NeoLudoColors.BrutalistAmber,
+                            tint = StadiumColors.Gold,
                             modifier = Modifier.size(12.dp)
                         )
                         Text(
                             text = "#${player.rank}",
-                            color = NeoLudoColors.BrutalistAmber,
+                            color = StadiumColors.Gold,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -234,7 +232,7 @@ fun PlayerPlate(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (isScored) playerColor else Color.Gray.copy(alpha = 0.4f))
+                                .background(if (isScored) playerColor else StadiumColors.Border)
                         )
                     }
                 }

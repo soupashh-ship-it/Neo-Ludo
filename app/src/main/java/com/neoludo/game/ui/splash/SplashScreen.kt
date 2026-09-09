@@ -27,6 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import kotlinx.coroutines.delay
 
 @Composable
@@ -50,12 +52,11 @@ fun SplashScreen(
         onSplashFinished()
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground),
-        contentAlignment = Alignment.Center
-    ) {
+    StadiumBackground(modifier = modifier) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -107,10 +108,11 @@ fun SplashScreen(
 
             Text(
                 text = "Ad-Free • Pure Play Multiplayer",
-                color = NeoLudoColors.ObsidianTextSecondary,
+                color = StadiumColors.TextSecondary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             )
+        }
         }
     }
 }

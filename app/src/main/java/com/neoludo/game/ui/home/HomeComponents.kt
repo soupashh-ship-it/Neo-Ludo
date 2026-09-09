@@ -2,7 +2,6 @@ package com.neoludo.game.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,35 +19,31 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.StadiumColors
+import com.neoludo.game.core.designsystem.TicketCard
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
 
+/** Stadium header — same destinations, capped avatar, 48dp icon targets. */
 @Composable
 fun HomeHeader(
     profile: UserProfile,
@@ -62,7 +57,7 @@ fun HomeHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(vertical = NeoLudoSpacing.md),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -70,59 +65,62 @@ fun HomeHeader(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
+                .weight(1f, fill = false)
+                .clip(MaterialTheme.shapes.small)
                 .clickable(onClick = onNavigateProfile)
-                .padding(4.dp)
+                .padding(NeoLudoSpacing.xs)
         ) {
             Surface(
                 shape = CircleShape,
-                color = NeoLudoColors.CobaltBlue,
-                border = BorderStroke(2.dp, NeoLudoColors.EmeraldGreen),
-                modifier = Modifier.size(46.dp)
+                color = StadiumColors.Accent,
+                border = BorderStroke(2.dp, StadiumColors.AccentBright),
+                modifier = Modifier.size(48.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = profile.displayName.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Black,
-                        fontSize = 20.sp,
                         color = Color.White
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(NeoLudoSpacing.md))
 
-            Column {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
                     text = profile.displayName,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color.White
+                    color = StadiumColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(NeoLudoSpacing.sm)
                 ) {
                     // Coins Pill
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(NeoLudoColors.AmberYellow.copy(alpha = 0.15f))
+                            .background(StadiumColors.Gold.copy(alpha = 0.15f))
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Star,
+                            imageVector = Icons.Default.EmojiEvents,
                             contentDescription = "Coins",
-                            tint = NeoLudoColors.AmberYellow,
+                            tint = StadiumColors.Gold,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${profile.coins}",
-                            color = NeoLudoColors.AmberYellow,
+                            color = StadiumColors.Gold,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
 
@@ -131,30 +129,30 @@ fun HomeHeader(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(NeoLudoColors.CobaltBlue.copy(alpha = 0.15f))
+                            .background(StadiumColors.Accent.copy(alpha = 0.15f))
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Bolt,
                             contentDescription = "Gems",
-                            tint = NeoLudoColors.CobaltBlue,
+                            tint = StadiumColors.AccentBright,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${profile.gems}",
-                            color = NeoLudoColors.CobaltBlue,
+                            color = StadiumColors.AccentBright,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                 }
             }
         }
 
-        // Action Icons
+        // Action Icons — wrap on narrow screens instead of overflowing.
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(NeoLudoSpacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
             HeaderIconButton(
@@ -188,98 +186,87 @@ fun HeaderIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    IconButton(
+    Surface(
         onClick = onClick,
-        modifier = modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(NeoLudoColors.ObsidianSurfaceCard)
-            .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
+        modifier = modifier.size(48.dp),
+        shape = CircleShape,
+        color = StadiumColors.Card,
+        border = BorderStroke(1.dp, StadiumColors.Border)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = Color.White,
-            modifier = Modifier.size(18.dp)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = StadiumColors.TextPrimary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
+/** Private-room hero — ticket card with a single accent CTA. */
 @Composable
 fun PlayWithFriendsCard(
     onCreateRoom: () -> Unit,
     onJoinRoom: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = NeoLudoColors.BrutalistInkSoft,
-        border = BorderStroke(2.dp, NeoLudoColors.BrutalistLine)
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
+    TicketCard(modifier = modifier, accent = StadiumColors.Accent) {
+        Column {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "PLAY WITH FRIENDS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF38BDF8),
-                        letterSpacing = 1.5.sp
+                        text = "Play with friends",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = StadiumColors.AccentBright
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Private Room Match",
-                        fontSize = 20.sp,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
+                        color = StadiumColors.TextPrimary
                     )
                     Text(
                         text = "Play together in real-time with room code",
-                        fontSize = 12.sp,
-                        color = Color(0xFF94A3B8)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StadiumColors.TextSecondary
                     )
                 }
 
                 Surface(
                     shape = CircleShape,
-                    color = Color(0xFF3B82F6).copy(alpha = 0.2f),
+                    color = StadiumColors.AccentContainer,
                     modifier = Modifier.size(48.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Group,
                             contentDescription = null,
-                            tint = Color(0xFF60A5FA),
+                            tint = StadiumColors.AccentBright,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(NeoLudoSpacing.md)
             ) {
                 Surface(
+                    onClick = onCreateRoom,
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(onClick = onCreateRoom),
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF3B82F6),
-                    border = BorderStroke(1.dp, Color(0xFF60A5FA))
+                        .height(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = StadiumColors.Accent
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
@@ -296,21 +283,22 @@ fun PlayWithFriendsCard(
                         Text(
                             text = "Create Room",
                             color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
                 Surface(
+                    onClick = onJoinRoom,
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(onClick = onJoinRoom),
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF1E293B),
-                    border = BorderStroke(1.dp, Color(0xFF475569))
+                        .height(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = StadiumColors.CardElevated,
+                    border = BorderStroke(1.dp, StadiumColors.BorderBright)
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
@@ -320,15 +308,17 @@ fun PlayWithFriendsCard(
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = StadiumColors.TextPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Join Room",
-                            color = Color.White,
+                            color = StadiumColors.TextPrimary,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -337,6 +327,7 @@ fun PlayWithFriendsCard(
     }
 }
 
+/** Single-accent mode tile — icon chip carries the stadium blue. */
 @Composable
 fun GameModeTile(
     title: String,
@@ -346,46 +337,51 @@ fun GameModeTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // accentColor kept in signature for call-site compatibility; the stadium
+    // system uses one accent — the chip below ignores per-tile rainbows.
     Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = NeoLudoColors.ObsidianSurfaceCard,
-        border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = StadiumColors.Card,
+        border = BorderStroke(1.dp, StadiumColors.Border)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(NeoLudoSpacing.lg),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = accentColor.copy(alpha = 0.15f),
-                modifier = Modifier.size(40.dp)
+                shape = MaterialTheme.shapes.small,
+                color = StadiumColors.AccentContainer,
+                modifier = Modifier.size(44.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = accentColor,
+                        tint = StadiumColors.AccentBright,
                         modifier = Modifier.size(22.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.lg))
 
             Column {
                 Text(
                     text = title,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color.White
+                    color = StadiumColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 11.sp,
-                    color = NeoLudoColors.ObsidianTextMuted
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StadiumColors.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -399,16 +395,13 @@ fun CareerStatsSummaryCard(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onNavigateStats),
-        shape = RoundedCornerShape(20.dp),
-        color = NeoLudoColors.ObsidianSurfaceCard,
-        border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
+        onClick = onNavigateStats,
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = StadiumColors.Card,
+        border = BorderStroke(1.dp, StadiumColors.Border)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(NeoLudoSpacing.lg)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -418,27 +411,27 @@ fun CareerStatsSummaryCard(
                     Icon(
                         imageVector = Icons.Default.EmojiEvents,
                         contentDescription = null,
-                        tint = NeoLudoColors.AmberYellow,
+                        tint = StadiumColors.Gold,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(NeoLudoSpacing.sm))
                     Text(
                         text = "Career Stats",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color.White
+                        color = StadiumColors.TextPrimary
                     )
                 }
 
                 Text(
                     text = "Win Rate: ${stats.winRate.toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = NeoLudoColors.EmeraldGreen
+                    color = StadiumColors.Success
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -458,14 +451,14 @@ fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black,
-            fontSize = 16.sp,
-            color = Color.White
+            color = StadiumColors.TextPrimary
         )
         Text(
             text = label,
-            fontSize = 11.sp,
-            color = NeoLudoColors.ObsidianTextMuted
+            style = MaterialTheme.typography.bodySmall,
+            color = StadiumColors.TextMuted
         )
     }
 }

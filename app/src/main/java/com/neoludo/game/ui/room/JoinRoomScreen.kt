@@ -43,9 +43,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neoludo.game.core.designsystem.AdaptiveContent
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import com.neoludo.game.multiplayer.FirebaseMultiplayerClient
 import kotlinx.coroutines.launch
 
@@ -62,77 +68,37 @@ fun JoinRoomScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-        ) {
-            Spacer(modifier = Modifier.height(36.dp))
+    StadiumBackground(modifier = modifier) {
+        AdaptiveContent {
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
-            // Top Bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "Join Private Room",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
+            ScreenHeader(title = "Join private room", onBack = onBack)
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xxxl))
 
             if (errorMessage != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    color = StadiumColors.Danger.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, StadiumColors.Danger),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = errorMessage ?: "",
-                        color = Color(0xFFFCA5A5),
+                        color = StadiumColors.Danger,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(NeoLudoSpacing.lg))
             }
 
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "ENTER 6-DIGIT ROOM CODE",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp
-                    )
+                    NeoLudoSectionLabel(text = "6-digit room code")
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
                     OutlinedTextField(
                         value = roomCodeInput,
@@ -143,13 +109,13 @@ fun JoinRoomScreen(
                         placeholder = {
                             Text(
                                 text = "NL-XXXXXX",
-                                color = NeoLudoColors.ObsidianTextMuted.copy(alpha = 0.5f),
+                                color = StadiumColors.TextMuted.copy(alpha = 0.6f),
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.Center
                             )
                         },
                         textStyle = TextStyle(
-                            color = Color.White,
+                            color = StadiumColors.TextPrimary,
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Black,
                             textAlign = TextAlign.Center,
@@ -157,16 +123,16 @@ fun JoinRoomScreen(
                         ),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeoLudoColors.CobaltBlue,
-                            unfocusedBorderColor = NeoLudoColors.ObsidianBorder,
-                            focusedContainerColor = Color(0xFF0F172A),
-                            unfocusedContainerColor = Color(0xFF0F172A)
+                            focusedBorderColor = StadiumColors.Accent,
+                            unfocusedBorderColor = StadiumColors.Border,
+                            focusedContainerColor = StadiumColors.CardElevated,
+                            unfocusedContainerColor = StadiumColors.CardElevated
                         ),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
                     // Paste Button
                     Row(
@@ -185,13 +151,13 @@ fun JoinRoomScreen(
                         Icon(
                             imageVector = Icons.Default.ContentPaste,
                             contentDescription = "Paste",
-                            tint = NeoLudoColors.CobaltBlue,
+                            tint = StadiumColors.AccentBright,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Paste from Clipboard",
-                            color = NeoLudoColors.CobaltBlue,
+                            color = StadiumColors.AccentBright,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -199,16 +165,15 @@ fun JoinRoomScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xxl))
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = NeoLudoColors.CobaltBlue)
+                    CircularProgressIndicator(color = StadiumColors.Accent)
                 }
             } else {
                 NeoLudoButton(
                     text = "Join Room",
-                    accentColor = NeoLudoColors.CobaltBlue,
                     onClick = {
                         val normalized = FirebaseMultiplayerClient.normalizeRoomCode(roomCodeInput)
                         if (normalized.length < 5) {

@@ -19,9 +19,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +64,13 @@ import androidx.compose.ui.unit.sp
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
+import com.neoludo.game.core.designsystem.StadiumDimens
+import com.neoludo.game.core.designsystem.isTablet
 import com.neoludo.game.core.model.BoardTheme
 import com.neoludo.game.core.model.DiceSkin
 import com.neoludo.game.core.model.PawnSkin
@@ -109,53 +119,33 @@ fun LockerScreen(
     var purchaseError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
+    val tablet = isTablet()
+    val cap = if (tablet) StadiumDimens.ContentMaxTablet else StadiumDimens.ContentMaxPhone
+    StadiumBackground(modifier = modifier) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter
+        ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .widthIn(max = cap)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = if (tablet) 28.dp else 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
             // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.BrutalistInkSoft)
-                        .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "COSMETICS LOCKER",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.5.sp
-                    )
-                    Text(
-                        text = "Customize your Neo-Ludo visual arena",
-                        color = NeoLudoColors.ObsidianTextSecondary,
-                        fontSize = 12.sp
+                    ScreenHeader(
+                        title = "Cosmetics locker",
+                        subtitle = "Customize your visual arena",
+                        onBack = onBack
                     )
                 }
 
@@ -163,8 +153,8 @@ fun LockerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1B2338),
-                        border = BorderStroke(1.dp, Color(0xFF2B3A5A))
+                        color = StadiumColors.Card,
+                        border = BorderStroke(1.dp, StadiumColors.Border)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -174,7 +164,7 @@ fun LockerScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "${profile.coins}",
-                                color = NeoLudoColors.AmberYellow,
+                                color = StadiumColors.Gold,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -183,8 +173,8 @@ fun LockerScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1B2338),
-                        border = BorderStroke(1.dp, Color(0xFF2B3A5A))
+                        color = StadiumColors.Card,
+                        border = BorderStroke(1.dp, StadiumColors.Border)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -194,7 +184,7 @@ fun LockerScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "${profile.gems}",
-                                color = Color(0xFF00E5FF),
+                                color = StadiumColors.AccentBright,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -210,8 +200,8 @@ fun LockerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(NeoLudoColors.ObsidianSurface)
-                    .border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(16.dp))
+                    .background(StadiumColors.Card)
+                    .border(1.dp, StadiumColors.Border, RoundedCornerShape(16.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -222,7 +212,7 @@ fun LockerScreen(
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
                             .clickable { selectedTab = tab },
-                        color = if (isSelected) NeoLudoColors.CobaltBlue else Color.Transparent,
+                        color = if (isSelected) StadiumColors.Accent else Color.Transparent,
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
@@ -233,13 +223,13 @@ fun LockerScreen(
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = null,
-                                tint = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                tint = if (isSelected) Color.White else StadiumColors.TextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = tab.title.split(" ").first(),
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                color = if (isSelected) Color.White else StadiumColors.TextSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
@@ -253,8 +243,7 @@ fun LockerScreen(
             // Live Interactive Preview Hero Section
             NeoLudoCard(
                 modifier = Modifier.fillMaxWidth(),
-                borderColor = NeoLudoColors.CobaltBlue.copy(alpha = 0.4f),
-                backgroundColor = NeoLudoColors.ObsidianSurfaceCard
+                borderColor = StadiumColors.Accent.copy(alpha = 0.4f)
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -263,13 +252,7 @@ fun LockerScreen(
                     when (selectedTab) {
                         LockerTab.BOARDS -> {
                             val palette = NeoLudoColors.getBoardColors(currentBoardTheme)
-                            Text(
-                                text = "ACTIVE BOARD THEME PREVIEW",
-                                color = NeoLudoColors.ObsidianTextMuted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
+                            NeoLudoSectionLabel(text = "Active board theme preview")
                             Spacer(modifier = Modifier.height(10.dp))
                             Box(
                                 modifier = Modifier
@@ -320,13 +303,7 @@ fun LockerScreen(
                         }
 
                         LockerTab.DICE -> {
-                            Text(
-                                text = "INTERACTIVE 3D DICE PREVIEW",
-                                color = NeoLudoColors.ObsidianTextMuted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
+                            NeoLudoSectionLabel(text = "Interactive dice preview")
                             Spacer(modifier = Modifier.height(10.dp))
                             ClassicDice(
                                 value = testDiceValue,
@@ -344,21 +321,15 @@ fun LockerScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Tap Dice to Test Roll 🎲",
-                                color = NeoLudoColors.AmberYellow,
+                                text = "Tap dice to test roll",
+                                color = StadiumColors.Gold,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
 
                         LockerTab.PAWNS -> {
-                            Text(
-                                text = "PAWN TOKEN SET PREVIEW",
-                                color = NeoLudoColors.ObsidianTextMuted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
+                            NeoLudoSectionLabel(text = "Pawn token set preview")
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -554,7 +525,7 @@ fun LockerScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = purchaseError ?: "",
-                    color = NeoLudoColors.BrutalistRed,
+                    color = StadiumColors.Danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -566,7 +537,7 @@ fun LockerScreen(
         if (pending != null) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { pendingPurchase = null },
-                title = { Text(text = "Unlock ${pending.title}?") },
+                title = { Text(text = "Unlock ${pending.title}?", color = StadiumColors.TextPrimary) },
                 text = {
                     Text(
                         text = if (pending.coinCost == 0 && pending.gemCost == 0) {
@@ -575,7 +546,8 @@ fun LockerScreen(
                             "Cost: ${pending.coinCost} coins" +
                                 (if (pending.gemCost > 0) " + ${pending.gemCost} gems" else "") +
                                 (if (!pending.canAfford) "\nNot enough currency." else "")
-                        }
+                        },
+                        color = StadiumColors.TextSecondary
                     )
                 },
                 confirmButton = {
@@ -590,12 +562,16 @@ fun LockerScreen(
                                 purchaseError = "Not enough currency for ${pending.title}."
                             }
                         }
-                    ) { Text("Unlock") }
+                    ) { Text("Unlock", color = StadiumColors.AccentBright) }
                 },
                 dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { pendingPurchase = null }) { Text("Cancel") }
-                }
+                    androidx.compose.material3.TextButton(onClick = { pendingPurchase = null }) {
+                        Text("Cancel", color = StadiumColors.TextSecondary)
+                    }
+                },
+                containerColor = StadiumColors.CardElevated
             )
+        }
         }
     }
 }
@@ -618,11 +594,11 @@ private fun CosmeticCard(
             .clip(RoundedCornerShape(18.dp))
             .border(
                 1.5.dp,
-                if (isEquipped) accentColor else if (!isUnlocked) NeoLudoColors.ObsidianBorder.copy(alpha = 0.6f) else NeoLudoColors.ObsidianBorder,
+                if (isEquipped) accentColor else if (!isUnlocked) StadiumColors.Border.copy(alpha = 0.6f) else StadiumColors.Border,
                 RoundedCornerShape(18.dp)
             )
             .clickable { onEquip() },
-        color = if (isEquipped) accentColor.copy(alpha = 0.12f) else NeoLudoColors.ObsidianSurfaceCard,
+        color = if (isEquipped) accentColor.copy(alpha = 0.12f) else StadiumColors.Card,
         shape = RoundedCornerShape(18.dp)
     ) {
         Row(
@@ -661,7 +637,7 @@ private fun CosmeticCard(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = description,
-                    color = NeoLudoColors.ObsidianTextSecondary,
+                    color = StadiumColors.TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 16.sp
                 )
@@ -688,12 +664,12 @@ private fun CosmeticCard(
                 isUnlocked -> {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = NeoLudoColors.ObsidianSurface,
-                        border = BorderStroke(1.dp, NeoLudoColors.ObsidianBorder)
+                        color = StadiumColors.CardElevated,
+                        border = BorderStroke(1.dp, StadiumColors.Border)
                     ) {
                         Text(
                             text = "EQUIP",
-                            color = NeoLudoColors.ObsidianTextSecondary,
+                            color = StadiumColors.TextSecondary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
@@ -703,8 +679,8 @@ private fun CosmeticCard(
                 else -> {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = if (canAfford) NeoLudoColors.AmberYellow.copy(alpha = 0.2f) else Color.Red.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, if (canAfford) NeoLudoColors.AmberYellow else Color.Red.copy(alpha = 0.4f))
+                        color = if (canAfford) StadiumColors.Gold.copy(alpha = 0.15f) else StadiumColors.Danger.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, if (canAfford) StadiumColors.Gold else StadiumColors.Danger.copy(alpha = 0.4f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
@@ -712,7 +688,7 @@ private fun CosmeticCard(
                         ) {
                             Text(
                                 text = if (costCoins > 0) "🪙 $costCoins" else "💎 $costGems",
-                                color = if (canAfford) Color.White else Color.Red.copy(alpha = 0.8f),
+                                color = if (canAfford) StadiumColors.TextPrimary else StadiumColors.Danger.copy(alpha = 0.8f),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp
                             )

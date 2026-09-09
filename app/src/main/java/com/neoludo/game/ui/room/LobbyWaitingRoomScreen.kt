@@ -53,9 +53,15 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neoludo.game.core.designsystem.AdaptiveScroll
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import com.neoludo.game.engine.model.PlayerColor
 import com.neoludo.game.multiplayer.OnlineRoomClient
 import com.neoludo.game.multiplayer.model.ConnectionState
@@ -110,53 +116,11 @@ fun LobbyWaitingRoomScreen(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-        ) {
-            Spacer(modifier = Modifier.height(36.dp))
+    StadiumBackground(modifier = modifier) {
+        AdaptiveScroll {
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
-            // Top Bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(
-                    onClick = leaveAndBack,
-                    enabled = !isLeaving,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Leave",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = "Lobby Waiting Room",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                    Text(
-                        text = "${presences.size} / $maxPlayers Players Joined",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            ScreenHeader(title = "Lobby · ${presences.size} of $maxPlayers", onBack = leaveAndBack)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -177,7 +141,7 @@ fun LobbyWaitingRoomScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
-                                color = NeoLudoColors.AmberYellow
+                                color = StadiumColors.Gold
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
@@ -191,7 +155,7 @@ fun LobbyWaitingRoomScreen(
                         if (isDown && !isRetrying) {
                             Text(
                                 text = "RETRY",
-                                color = NeoLudoColors.AmberYellow,
+                                color = StadiumColors.Gold,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Black,
                                 modifier = Modifier.clickable {
@@ -215,13 +179,7 @@ fun LobbyWaitingRoomScreen(
             // Room Code Card
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "ROOM CODE",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp
-                    )
+                    NeoLudoSectionLabel(text = "Room code")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = roomId,
@@ -243,8 +201,8 @@ fun LobbyWaitingRoomScreen(
                                     copiedCodeToast = true
                                 },
                             shape = RoundedCornerShape(12.dp),
-                            color = if (copiedCodeToast) NeoLudoColors.EmeraldGreen.copy(alpha = 0.2f) else Color(0xFF1E293B),
-                            border = BorderStroke(1.dp, if (copiedCodeToast) NeoLudoColors.EmeraldGreen else Color(0xFF334155))
+                            color = if (copiedCodeToast) StadiumColors.Success.copy(alpha = 0.2f) else StadiumColors.CardElevated,
+                            border = BorderStroke(1.dp, if (copiedCodeToast) StadiumColors.Success else StadiumColors.Border)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -253,13 +211,13 @@ fun LobbyWaitingRoomScreen(
                                 Icon(
                                     imageVector = if (copiedCodeToast) Icons.Default.Check else Icons.Default.ContentCopy,
                                     contentDescription = "Copy",
-                                    tint = if (copiedCodeToast) NeoLudoColors.EmeraldGreen else Color.White,
+                                    tint = if (copiedCodeToast) StadiumColors.Success else StadiumColors.TextPrimary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (copiedCodeToast) "Copied!" else "Copy Code",
-                                    color = if (copiedCodeToast) NeoLudoColors.EmeraldGreen else Color.White,
+                                    color = if (copiedCodeToast) StadiumColors.Success else StadiumColors.TextPrimary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -282,8 +240,8 @@ fun LobbyWaitingRoomScreen(
                                     context.startActivity(Intent.createChooser(sendIntent, "Share Room Code"))
                                 },
                             shape = RoundedCornerShape(12.dp),
-                            color = NeoLudoColors.CobaltBlue,
-                            border = BorderStroke(1.dp, Color(0xFF60A5FA))
+                            color = StadiumColors.Accent,
+                            border = BorderStroke(1.dp, StadiumColors.AccentBright)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -314,7 +272,7 @@ fun LobbyWaitingRoomScreen(
             // two phones when a join misbehaves.
             Text(
                 text = "You: ${self?.name ?: "…"} • ${client.currentUid.takeLast(4)} • via ${client.transportDebug}",
-                color = NeoLudoColors.ObsidianTextMuted,
+                color = StadiumColors.TextMuted,
                 fontSize = 11.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
@@ -324,13 +282,13 @@ fun LobbyWaitingRoomScreen(
             if (errorMessage != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    color = StadiumColors.Danger.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, StadiumColors.Danger),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = errorMessage ?: "",
-                        color = Color(0xFFFCA5A5),
+                        color = StadiumColors.Danger,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(12.dp)
@@ -340,13 +298,7 @@ fun LobbyWaitingRoomScreen(
             }
 
             // Player Slots
-            Text(
-                text = "PLAYERS ($maxPlayers SLOTS)",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Players ($maxPlayers slots)")
             Spacer(modifier = Modifier.height(10.dp))
 
             Column(
@@ -375,8 +327,8 @@ fun LobbyWaitingRoomScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(16.dp))
+                        .background(StadiumColors.Card)
+                        .border(1.dp, StadiumColors.Border, RoundedCornerShape(16.dp))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -385,7 +337,7 @@ fun LobbyWaitingRoomScreen(
                         Icon(
                             imageVector = Icons.Default.SmartToy,
                             contentDescription = null,
-                            tint = NeoLudoColors.EmeraldGreen,
+                            tint = StadiumColors.Success,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -399,7 +351,7 @@ fun LobbyWaitingRoomScreen(
                         onCheckedChange = { fill ->
                             scope.launch { client.setFillBots(fill) }
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.EmeraldGreen)
+                        colors = SwitchDefaults.colors(checkedThumbColor = StadiumColors.Accent)
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -416,12 +368,11 @@ fun LobbyWaitingRoomScreen(
                 }
                 if (isStarting) {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = NeoLudoColors.EmeraldGreen)
+                        CircularProgressIndicator(color = StadiumColors.Accent)
                     }
                 } else {
                     NeoLudoButton(
                         text = if (canStart) "Start Game" else "Waiting for Players...",
-                        accentColor = NeoLudoColors.EmeraldGreen,
                         enabled = canStart,
                         onClick = {
                             isStarting = true
@@ -441,7 +392,6 @@ fun LobbyWaitingRoomScreen(
                 // Guest Ready Toggle
                 NeoLudoButton(
                     text = if (isSelfReady) "You Are Ready (Tap to Unready)" else "Ready Up",
-                    accentColor = if (isSelfReady) NeoLudoColors.EmeraldGreen else NeoLudoColors.CobaltBlue,
                     onClick = {
                         scope.launch { client.setReady(!isSelfReady) }
                     },
@@ -471,8 +421,8 @@ fun LobbyPlayerCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = NeoLudoColors.ObsidianSurfaceCard,
-        border = BorderStroke(1.dp, if (isLocal) playerColor else NeoLudoColors.ObsidianBorder)
+        color = StadiumColors.Card,
+        border = BorderStroke(1.dp, if (isLocal) playerColor else StadiumColors.Border)
     ) {
         Row(
             modifier = Modifier
@@ -512,11 +462,11 @@ fun LobbyPlayerCard(
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = NeoLudoColors.AmberYellow.copy(alpha = 0.2f)
+                                color = StadiumColors.Gold.copy(alpha = 0.15f)
                             ) {
                                 Text(
                                     text = "HOST",
-                                    color = NeoLudoColors.AmberYellow,
+                                    color = StadiumColors.Gold,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
@@ -528,7 +478,7 @@ fun LobbyPlayerCard(
                     Text(
                         text = if (!player.isConnected) "Disconnected" else player.color.name,
                         fontSize = 11.sp,
-                        color = if (!player.isConnected) Color(0xFFEF4444) else NeoLudoColors.ObsidianTextMuted
+                        color = if (!player.isConnected) StadiumColors.Danger else StadiumColors.TextMuted
                     )
                 }
             }
@@ -536,8 +486,8 @@ fun LobbyPlayerCard(
             // Ready Badge
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = if (player.isReady) NeoLudoColors.EmeraldGreen.copy(alpha = 0.15f) else Color(0xFF334155).copy(alpha = 0.3f),
-                border = BorderStroke(1.dp, if (player.isReady) NeoLudoColors.EmeraldGreen else Color(0xFF475569))
+                color = if (player.isReady) StadiumColors.Success.copy(alpha = 0.15f) else StadiumColors.CardElevated,
+                border = BorderStroke(1.dp, if (player.isReady) StadiumColors.Success else StadiumColors.BorderBright)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -546,13 +496,13 @@ fun LobbyPlayerCard(
                     Icon(
                         imageVector = if (player.isReady) Icons.Default.CheckCircle else Icons.Default.HourglassEmpty,
                         contentDescription = null,
-                        tint = if (player.isReady) NeoLudoColors.EmeraldGreen else Color.Gray,
+                        tint = if (player.isReady) StadiumColors.Success else StadiumColors.TextMuted,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (player.isReady) "READY" else "WAITING",
-                        color = if (player.isReady) NeoLudoColors.EmeraldGreen else Color.Gray,
+                        color = if (player.isReady) StadiumColors.Success else StadiumColors.TextMuted,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -567,8 +517,8 @@ fun LobbyEmptySlotCard(slotIndex: Int, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF0F172A).copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, Color(0xFF1E293B))
+        color = StadiumColors.Card.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, StadiumColors.Border)
     ) {
         Row(
             modifier = Modifier
@@ -578,14 +528,14 @@ fun LobbyEmptySlotCard(slotIndex: Int, modifier: Modifier = Modifier) {
         ) {
             Surface(
                 shape = CircleShape,
-                color = Color(0xFF1E293B),
+                color = StadiumColors.CardElevated,
                 modifier = Modifier.size(38.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Person,
                         contentDescription = null,
-                        tint = Color(0xFF475569),
+                        tint = StadiumColors.TextMuted,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -595,7 +545,7 @@ fun LobbyEmptySlotCard(slotIndex: Int, modifier: Modifier = Modifier) {
 
             Text(
                 text = "Slot $slotIndex: Waiting for player...",
-                color = Color(0xFF64748B),
+                color = StadiumColors.TextMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
             )

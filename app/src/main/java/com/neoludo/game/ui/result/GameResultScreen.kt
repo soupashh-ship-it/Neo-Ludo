@@ -21,9 +21,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +57,12 @@ import androidx.compose.ui.unit.sp
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
+import com.neoludo.game.core.designsystem.StadiumDimens
+import com.neoludo.game.core.designsystem.isTablet
 import com.neoludo.game.engine.model.PlayerColor
 import kotlin.math.sin
 import kotlin.random.Random
@@ -117,12 +126,13 @@ fun GameResultScreen(
         podiumHeightAnim.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
     }
 
+    val tablet = isTablet()
+    val cap = if (tablet) StadiumDimens.ContentMaxTablet else StadiumDimens.ContentMaxPhone
+    StadiumBackground(modifier = modifier) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
+        modifier = Modifier.fillMaxSize()
     ) {
-        // 1. Particle Confetti Falling Canvas
+        // 1. Particle Confetti Falling Canvas (celebration — festive multi kept)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -142,13 +152,20 @@ fun GameResultScreen(
         }
 
         // 2. Victory Content
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
+                .widthIn(max = cap)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = if (tablet) 28.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(44.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
             // Header Banner
             Surface(
@@ -163,13 +180,13 @@ fun GameResultScreen(
                     Icon(
                         imageVector = Icons.Default.Stars,
                         contentDescription = null,
-                        tint = NeoLudoColors.AmberYellow,
+                        tint = StadiumColors.Gold,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "MATCH CONCLUDED",
-                        color = Color.White,
+                        text = "Match concluded",
+                        color = StadiumColors.TextPrimary,
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
                         letterSpacing = 1.sp
@@ -237,13 +254,7 @@ fun GameResultScreen(
             // 4. Match Performance Highlights Card
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "MATCH PERFORMANCE HIGHLIGHTS",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    NeoLudoSectionLabel(text = "Match performance highlights")
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -257,20 +268,20 @@ fun GameResultScreen(
                                 Icon(
                                     imageVector = Icons.Default.Shield,
                                     contentDescription = null,
-                                    tint = NeoLudoColors.RubyRed,
+                                    tint = StadiumColors.Danger,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "$captures",
-                                    color = NeoLudoColors.RubyRed,
+                                    color = StadiumColors.Danger,
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
                             Text(
                                 text = "Captures",
-                                color = NeoLudoColors.ObsidianTextSecondary,
+                                color = StadiumColors.TextSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -281,20 +292,20 @@ fun GameResultScreen(
                                 Icon(
                                     imageVector = Icons.Default.Casino,
                                     contentDescription = null,
-                                    tint = NeoLudoColors.AmberYellow,
+                                    tint = StadiumColors.Gold,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "$sixes",
-                                    color = NeoLudoColors.AmberYellow,
+                                    color = StadiumColors.Gold,
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
                             Text(
                                 text = "Sixes Rolled",
-                                color = NeoLudoColors.ObsidianTextSecondary,
+                                color = StadiumColors.TextSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -323,21 +334,23 @@ fun GameResultScreen(
                     .height(50.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .clickable(onClick = onMainMenu)
-                    .border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(16.dp)),
-                color = NeoLudoColors.ObsidianSurfaceCard
+                    .border(1.dp, StadiumColors.BorderBright, RoundedCornerShape(16.dp)),
+                color = StadiumColors.CardElevated
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = "Main Menu",
-                        color = Color.White,
+                        color = StadiumColors.TextPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xxxl))
         }
+        }
+    }
     }
 }
 
@@ -358,7 +371,7 @@ private fun PodiumColumn(
             Icon(
                 imageVector = Icons.Default.EmojiEvents,
                 contentDescription = null,
-                tint = NeoLudoColors.AmberYellow,
+                tint = StadiumColors.Gold,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))

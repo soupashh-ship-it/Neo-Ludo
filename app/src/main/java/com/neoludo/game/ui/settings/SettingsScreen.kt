@@ -43,8 +43,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neoludo.game.core.designsystem.AdaptiveScroll
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import com.neoludo.game.core.model.GameSettings
 import com.neoludo.game.core.model.ThemeMode
 
@@ -95,57 +101,16 @@ fun SettingsScreen(
         )
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(36.dp))
+    StadiumBackground(modifier = modifier) {
+        AdaptiveScroll {
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
-            // Top Bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "Settings",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
+            ScreenHeader(title = "Settings", onBack = onBack)
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
             // Appearance Theme
-            Text(
-                text = "APPEARANCE",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Appearance")
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -171,15 +136,15 @@ fun SettingsScreen(
                             }
                             .border(
                                 1.5.dp,
-                                if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianBorder,
+                                if (isSelected) StadiumColors.Accent else StadiumColors.Border,
                                 RoundedCornerShape(14.dp)
                             ),
-                        color = if (isSelected) NeoLudoColors.CobaltBlueContainer else NeoLudoColors.ObsidianSurfaceCard
+                        color = if (isSelected) StadiumColors.AccentContainer else StadiumColors.Card
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 text = label,
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                color = if (isSelected) StadiumColors.TextPrimary else StadiumColors.TextSecondary,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 13.sp
                             )
@@ -191,13 +156,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // 2. Board Theme Selector
-            Text(
-                text = "BOARD THEME",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Board theme")
             Spacer(modifier = Modifier.height(8.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -213,10 +172,10 @@ fun SettingsScreen(
                             }
                             .border(
                                 1.5.dp,
-                                if (isSelected) NeoLudoColors.EmeraldGreen else NeoLudoColors.ObsidianBorder,
+                                if (isSelected) StadiumColors.Accent else StadiumColors.Border,
                                 RoundedCornerShape(14.dp)
                             ),
-                        color = if (isSelected) NeoLudoColors.EmeraldGreenContainer.copy(alpha = 0.6f) else NeoLudoColors.ObsidianSurfaceCard
+                        color = if (isSelected) StadiumColors.AccentContainer.copy(alpha = 0.6f) else StadiumColors.Card
                     ) {
                         Row(
                             modifier = Modifier
@@ -228,13 +187,13 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = bTheme.displayName,
-                                    color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextPrimary,
+                                    color = StadiumColors.TextPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     text = bTheme.description,
-                                    color = NeoLudoColors.ObsidianTextSecondary,
+                                    color = StadiumColors.TextSecondary,
                                     fontSize = 11.sp
                                 )
                             }
@@ -243,13 +202,13 @@ fun SettingsScreen(
                                     modifier = Modifier
                                         .size(22.dp)
                                         .clip(CircleShape)
-                                        .background(NeoLudoColors.EmeraldGreen),
+                                        .background(StadiumColors.Accent),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Selected",
-                                        tint = Color.Black,
+                                        tint = Color.White,
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
@@ -262,13 +221,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // 3. 3D Dice Skin Selector
-            Text(
-                text = "3D DICE SKIN",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Dice skin")
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
@@ -287,10 +240,10 @@ fun SettingsScreen(
                             }
                             .border(
                                 1.5.dp,
-                                if (isSelected) NeoLudoColors.RubyRed else NeoLudoColors.ObsidianBorder,
+                                if (isSelected) StadiumColors.Accent else StadiumColors.Border,
                                 RoundedCornerShape(12.dp)
                             ),
-                        color = if (isSelected) NeoLudoColors.RubyRedContainer else NeoLudoColors.ObsidianSurfaceCard
+                        color = if (isSelected) StadiumColors.AccentContainer else StadiumColors.Card
                     ) {
                         Box(
                             modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -298,7 +251,7 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text = dSkin.displayName.replace(" ", "\n"),
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                color = if (isSelected) StadiumColors.TextPrimary else StadiumColors.TextSecondary,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 11.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -311,13 +264,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // 4. Pawn Token Skin Selector
-            Text(
-                text = "PAWN TOKEN STYLE",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Pawn style")
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
@@ -336,10 +283,10 @@ fun SettingsScreen(
                             }
                             .border(
                                 1.5.dp,
-                                if (isSelected) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianBorder,
+                                if (isSelected) StadiumColors.Accent else StadiumColors.Border,
                                 RoundedCornerShape(12.dp)
                             ),
-                        color = if (isSelected) NeoLudoColors.AmberYellowContainer else NeoLudoColors.ObsidianSurfaceCard
+                        color = if (isSelected) StadiumColors.AccentContainer else StadiumColors.Card
                     ) {
                         Box(
                             modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -347,7 +294,7 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text = pSkin.displayName.replace(" ", "\n"),
-                                color = if (isSelected) Color.White else NeoLudoColors.ObsidianTextSecondary,
+                                color = if (isSelected) StadiumColors.TextPrimary else StadiumColors.TextSecondary,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 11.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -360,13 +307,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Audio & Haptics
-            Text(
-                text = "AUDIO & HAPTICS",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Audio & haptics")
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -377,16 +318,16 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Sound Effects Volume", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("${(soundVolume * 100).toInt()}%", color = NeoLudoColors.EmeraldGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Sound Effects Volume", color = StadiumColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("${(soundVolume * 100).toInt()}%", color = StadiumColors.Success, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         Slider(
                             value = soundVolume,
                             onValueChange = { soundVolume = it },
                             onValueChangeFinished = { syncSettings() },
                             colors = SliderDefaults.colors(
-                                thumbColor = NeoLudoColors.EmeraldGreen,
-                                activeTrackColor = NeoLudoColors.EmeraldGreen
+                                thumbColor = StadiumColors.Success,
+                                activeTrackColor = StadiumColors.Success
                             )
                         )
                     }
@@ -396,16 +337,16 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Music Volume", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("${(musicVolume * 100).toInt()}%", color = NeoLudoColors.CobaltBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Music Volume", color = StadiumColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("${(musicVolume * 100).toInt()}%", color = StadiumColors.AccentBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         Slider(
                             value = musicVolume,
                             onValueChange = { musicVolume = it },
                             onValueChangeFinished = { syncSettings() },
                             colors = SliderDefaults.colors(
-                                thumbColor = NeoLudoColors.CobaltBlue,
-                                activeTrackColor = NeoLudoColors.CobaltBlue
+                                thumbColor = StadiumColors.Accent,
+                                activeTrackColor = StadiumColors.Accent
                             )
                         )
                     }
@@ -415,14 +356,14 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Haptic Vibration Feedback", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Haptic Vibration Feedback", color = StadiumColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
                             checked = hapticsEnabled,
                             onCheckedChange = {
                                 hapticsEnabled = it
                                 syncSettings()
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StadiumColors.Success)
                         )
                     }
                 }
@@ -431,13 +372,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Rule Defaults
-            Text(
-                text = "GAMEPLAY DEFAULTS",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Gameplay defaults")
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -448,14 +383,14 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Auto-Move Single Legal Piece", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Auto-Move Single Legal Piece", color = StadiumColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
                             checked = autoMoveSingle,
                             onCheckedChange = {
                                 autoMoveSingle = it
                                 syncSettings()
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StadiumColors.Success)
                         )
                     }
 
@@ -464,14 +399,14 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("3x Consecutive Sixes Penalty", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("3x Consecutive Sixes Penalty", color = StadiumColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
                             checked = penalty3xSix,
                             onCheckedChange = {
                                 penalty3xSix = it
                                 syncSettings()
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StadiumColors.Success)
                         )
                     }
                 }
@@ -480,8 +415,8 @@ fun SettingsScreen(
             // App About Info
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text(text = "Neo Ludo v$appVersion", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "100% Ad-Free • Pure Play Multiplayer", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
+                    Text(text = "Neo Ludo v$appVersion", color = StadiumColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "100% Ad-Free • Pure Play Multiplayer", color = StadiumColors.TextSecondary, fontSize = 12.sp)
                 }
             }
 

@@ -43,9 +43,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neoludo.game.core.designsystem.AdaptiveScroll
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import com.neoludo.game.engine.model.LudoRuleSet
 import com.neoludo.game.engine.model.PlayerColor
 import kotlinx.coroutines.launch
@@ -68,59 +74,24 @@ fun CreateRoomScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(36.dp))
+    StadiumBackground(modifier = modifier) {
+        AdaptiveScroll {
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
-            // Top bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "Create Private Room",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
+            ScreenHeader(title = "Create private room", onBack = onBack)
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
             if (errorMessage != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    color = StadiumColors.Danger.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, StadiumColors.Danger),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = errorMessage ?: "",
-                        color = Color(0xFFFCA5A5),
+                        color = StadiumColors.Danger,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(12.dp)
@@ -130,13 +101,7 @@ fun CreateRoomScreen(
             }
 
             // Player Count
-            Text(
-                text = "PLAYER COUNT",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Player count")
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -151,8 +116,8 @@ fun CreateRoomScreen(
                             .clip(RoundedCornerShape(14.dp))
                             .clickable { playerCount = count },
                         shape = RoundedCornerShape(14.dp),
-                        color = if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianSurfaceCard,
-                        border = BorderStroke(1.dp, if (isSelected) NeoLudoColors.CobaltBlue else NeoLudoColors.ObsidianBorder)
+                        color = if (isSelected) StadiumColors.Accent else StadiumColors.Card,
+                        border = BorderStroke(1.dp, if (isSelected) StadiumColors.AccentBright else StadiumColors.Border)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
@@ -168,14 +133,8 @@ fun CreateRoomScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Preferred Color
-            Text(
-                text = "YOUR TOKEN COLOR",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            // Preferred Color (seat identity — heritage colors kept)
+            NeoLudoSectionLabel(text = "Your token color")
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -217,13 +176,7 @@ fun CreateRoomScreen(
             // Rules Card
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text(
-                        text = "MATCH RULES",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    NeoLudoSectionLabel(text = "Match rules")
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Turn Timer
@@ -241,7 +194,7 @@ fun CreateRoomScreen(
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable { timerSeconds = sec },
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) NeoLudoColors.EmeraldGreen else Color(0xFF1E293B)
+                                color = if (isSelected) StadiumColors.Accent else StadiumColors.CardElevated
                             ) {
                                 Box(
                                     modifier = Modifier.padding(vertical = 8.dp),
@@ -268,12 +221,12 @@ fun CreateRoomScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("3x Consecutive Sixes Penalty", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Turn forfeits on 3 sixes in a row", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
+                            Text("Turn forfeits on 3 sixes in a row", color = StadiumColors.TextMuted, fontSize = 11.sp)
                         }
                         Switch(
                             checked = penalty3xSix,
                             onCheckedChange = { penalty3xSix = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.CobaltBlue)
+                            colors = SwitchDefaults.colors(checkedThumbColor = StadiumColors.Accent)
                         )
                     }
 
@@ -287,12 +240,12 @@ fun CreateRoomScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Auto-Move Single Piece", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Auto-hop when only 1 move is legal", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
+                            Text("Auto-hop when only 1 move is legal", color = StadiumColors.TextMuted, fontSize = 11.sp)
                         }
                         Switch(
                             checked = autoMoveSingle,
                             onCheckedChange = { autoMoveSingle = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.CobaltBlue)
+                            colors = SwitchDefaults.colors(checkedThumbColor = StadiumColors.Accent)
                         )
                     }
 
@@ -306,12 +259,12 @@ fun CreateRoomScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Fill Empty Seats with Bots", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Fill unfilled seats with AI when match starts", color = NeoLudoColors.ObsidianTextMuted, fontSize = 11.sp)
+                            Text("Fill unfilled seats with AI when match starts", color = StadiumColors.TextMuted, fontSize = 11.sp)
                         }
                         Switch(
                             checked = fillBots,
                             onCheckedChange = { fillBots = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = NeoLudoColors.EmeraldGreen)
+                            colors = SwitchDefaults.colors(checkedThumbColor = StadiumColors.Accent)
                         )
                     }
                 }
@@ -321,12 +274,11 @@ fun CreateRoomScreen(
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = NeoLudoColors.CobaltBlue)
+                    CircularProgressIndicator(color = StadiumColors.Accent)
                 }
             } else {
                 NeoLudoButton(
                     text = "Create Room",
-                    accentColor = NeoLudoColors.CobaltBlue,
                     onClick = {
                         isLoading = true
                         errorMessage = null
@@ -356,12 +308,12 @@ fun CreateRoomScreen(
             ) {
                 Text(
                     text = "Have a room code? ",
-                    color = NeoLudoColors.ObsidianTextMuted,
+                    color = StadiumColors.TextMuted,
                     fontSize = 13.sp
                 )
                 Text(
                     text = "Join Room",
-                    color = NeoLudoColors.CobaltBlue,
+                    color = StadiumColors.AccentBright,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     modifier = Modifier.clickable(onClick = onNavigateJoin)

@@ -22,11 +22,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -75,7 +78,10 @@ import com.neoludo.game.core.audio.HapticType
 import com.neoludo.game.core.audio.SoundController
 import com.neoludo.game.core.audio.SoundEffect
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
 import com.neoludo.game.core.designsystem.PlayerPlate
+import com.neoludo.game.core.designsystem.StadiumColors
+import com.neoludo.game.core.designsystem.StadiumDimens
 import com.neoludo.game.core.model.BoardTheme
 import com.neoludo.game.core.model.DiceSkin
 import com.neoludo.game.core.model.PawnSkin
@@ -303,6 +309,21 @@ fun GameScreen(
             .fillMaxSize()
             .background(palette.background)
     ) {
+        // Floodlight spotlight — stadium identity, zero gameplay impact.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    androidx.compose.ui.graphics.Brush.radialGradient(
+                        colors = listOf(
+                            StadiumColors.Spotlight.copy(alpha = 0.30f),
+                            Color.Transparent
+                        ),
+                        center = Offset(0.5f, 0.0f),
+                        radius = 1.1f
+                    )
+                )
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -365,9 +386,11 @@ fun GameScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics & Custom Skins
+            // Width-capped on tablets so HUD + tray keep their budget.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = StadiumDimens.BoardMax)
                     .semantics {
                         contentDescription = "Ludo board. ${state.activePlayer.name}'s turn. " +
                             "Dice showing ${state.diceState.value}. " +
@@ -485,29 +508,31 @@ fun GameScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Quick Emote & Chat Picker Overlay
+        // Quick Emote & Chat Picker — centered capped dialog (never clipped by
+        // nav bars, wraps on 320dp phones, never stretches on tablets).
         if (showEmotePicker) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { showEmotePicker = false },
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                QuickEmotePicker(
-                    onSelectEmote = { emote ->
-                        scope.launch {
-                            client.sendEmote(emote)
-                            showEmotePicker = false
+            androidx.compose.ui.window.Dialog(onDismissRequest = { showEmotePicker = false }) {
+                Surface(
+                    modifier = Modifier.widthIn(max = StadiumDimens.DialogMax),
+                    shape = RoundedCornerShape(22.dp),
+                    color = StadiumColors.CardElevated,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, StadiumColors.BorderBright)
+                ) {
+                    QuickEmotePicker(
+                        onSelectEmote = { emote ->
+                            scope.launch {
+                                client.sendEmote(emote)
+                                showEmotePicker = false
+                            }
+                        },
+                        onSelectChat = { msg ->
+                            scope.launch {
+                                client.sendChat(msg)
+                                showEmotePicker = false
+                            }
                         }
-                    },
-                    onSelectChat = { msg ->
-                        scope.launch {
-                            client.sendChat(msg)
-                            showEmotePicker = false
-                        }
-                    },
-                    modifier = Modifier.padding(bottom = 130.dp)
-                )
+                    )
+                }
             }
         }
 
@@ -541,15 +566,15 @@ fun GameScreen(
                             onExitGame()
                         }
                     }) {
-                        Text(text = "Leave", color = NeoLudoColors.RubyRed, fontWeight = FontWeight.Bold)
+                        Text(text = "Leave", color = StadiumColors.Danger, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showSurrenderDialog = false }) {
-                        Text(text = "Resume", color = Color.White)
+                        Text(text = "Resume", color = StadiumColors.TextPrimary)
                     }
                 },
-                containerColor = palette.cardSurface
+                containerColor = StadiumColors.CardElevated
             )
         }
     }
@@ -581,35 +606,35 @@ private fun GameTopHud(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(NeoLudoColors.BrutalistInkSoft)
-                .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
+                .background(StadiumColors.Card)
+                .border(2.dp, StadiumColors.Border, CircleShape)
         ) {
             Icon(
                 imageVector = Icons.Default.Flag,
                 contentDescription = "Surrender",
-                tint = NeoLudoColors.BrutalistRed,
+                tint = StadiumColors.Danger,
                 modifier = Modifier.size(20.dp)
             )
         }
         if (connectionState == com.neoludo.game.multiplayer.model.ConnectionState.RECONNECTING) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = NeoLudoColors.AmberYellow.copy(alpha = 0.2f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, NeoLudoColors.AmberYellow)
+                color = StadiumColors.Gold.copy(alpha = 0.2f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, StadiumColors.Gold)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     CircularProgressIndicator(
-                        color = NeoLudoColors.AmberYellow,
+                        color = StadiumColors.Gold,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Reconnecting...",
-                        color = NeoLudoColors.AmberYellow,
+                        color = StadiumColors.Gold,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -623,13 +648,13 @@ private fun GameTopHud(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.BrutalistInkSoft)
-                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
+                    .background(StadiumColors.Card)
+                    .border(2.dp, StadiumColors.Border, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.AddReaction,
                     contentDescription = "Emotes",
-                    tint = NeoLudoColors.BrutalistAmber,
+                    tint = StadiumColors.Gold,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -639,13 +664,13 @@ private fun GameTopHud(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.BrutalistInkSoft)
-                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
+                    .background(StadiumColors.Card)
+                    .border(2.dp, StadiumColors.Border, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
-                    tint = NeoLudoColors.BrutalistBlue,
+                    tint = StadiumColors.AccentBright,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -655,8 +680,8 @@ private fun GameTopHud(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(NeoLudoColors.BrutalistInkSoft)
-                    .border(2.dp, NeoLudoColors.BrutalistLine, CircleShape)
+                    .background(StadiumColors.Card)
+                    .border(2.dp, StadiumColors.Border, CircleShape)
             ) {
                 Icon(
                     imageVector = if (soundController.isSoundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute,
@@ -709,11 +734,11 @@ private fun TurnActionTray(
         TurnPhase.GAME_OVER -> "Game Over!"
     }
 
-    // Urgency color for the countdown: paper → amber (<10s) → red (<5s).
+    // Urgency color for the countdown: muted → gold (<10s) → red (<5s).
     val timerColor = when {
-        secondsLeft in 0..5 -> NeoLudoColors.BrutalistRed
-        secondsLeft in 6..10 -> NeoLudoColors.BrutalistAmber
-        else -> NeoLudoColors.BrutalistTextMutedOnInk
+        secondsLeft in 0..5 -> StadiumColors.Danger
+        secondsLeft in 6..10 -> StadiumColors.Gold
+        else -> StadiumColors.TextMuted
     }
 
     Column(
@@ -723,8 +748,8 @@ private fun TurnActionTray(
         // Player Turn Badge Capsule with Consecutive Sixes warning & Bonus indicators
         Surface(
             shape = RoundedCornerShape(14.dp),
-            color = NeoLudoColors.BrutalistInkSoft,
-            border = androidx.compose.foundation.BorderStroke(2.dp, NeoLudoColors.BrutalistLine)
+            color = StadiumColors.Card,
+            border = androidx.compose.foundation.BorderStroke(1.dp, StadiumColors.Border)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -739,7 +764,7 @@ private fun TurnActionTray(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = promptTitle,
-                    color = Color.White,
+                    color = StadiumColors.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
@@ -766,7 +791,7 @@ private fun TurnActionTray(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (isFilled) NeoLudoColors.BrutalistAmber else NeoLudoColors.BrutalistLine)
+                                    .background(if (isFilled) StadiumColors.Gold else StadiumColors.Border)
                             )
                         }
                     }
@@ -779,7 +804,7 @@ private fun TurnActionTray(
         // Action Guidance Text
         Text(
             text = promptInstruction,
-            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) NeoLudoColors.BrutalistAmber else NeoLudoColors.BrutalistTextMutedOnInk,
+            color = if (!active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL) StadiumColors.Gold else StadiumColors.TextMuted,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp
         )
@@ -787,7 +812,7 @@ private fun TurnActionTray(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Auto-played — you ran out of time",
-                color = NeoLudoColors.BrutalistTextMutedOnInk,
+                color = StadiumColors.TextMuted,
                 fontSize = 11.sp
             )
         }
@@ -821,8 +846,8 @@ private fun TwoPlayerArcadeBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp)),
-        color = NeoLudoColors.BrutalistInkSoft,
-        border = androidx.compose.foundation.BorderStroke(2.dp, NeoLudoColors.BrutalistLine),
+        color = StadiumColors.Card,
+        border = androidx.compose.foundation.BorderStroke(1.dp, StadiumColors.Border),
         shape = RoundedCornerShape(14.dp)
     ) {
         Row(
@@ -990,6 +1015,7 @@ private fun MiniMapPinIcon(
         drawCircle(Color.White, headR * 0.18f, Offset(pinTop.x - headR * 0.2f, pinTop.y - headR * 0.2f))
     }
 }
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickEmotePicker(
     onSelectEmote: (String) -> Unit,
@@ -999,89 +1025,59 @@ private fun QuickEmotePicker(
     val emotes = listOf("🔥", "😎", "😂", "😭", "⚡", "🎉", "💀", "👑")
     val quickChats = listOf("Good Luck!", "Well Played!", "Nice move!", "Oops!", "Hurry up!", "GG!")
 
-    Surface(
-        modifier = modifier
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .border(1.5.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(22.dp)),
-        color = NeoLudoColors.ObsidianSurfaceCard
+    Column(
+        modifier = modifier.padding(NeoLudoSpacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Text(
+            text = "Reactions & chat",
+            color = StadiumColors.TextMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Wrapping grid — fits 320dp phones without clipping.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "REACTIONS & CHAT",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 8 Animated Reaction Emojis
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                emotes.forEach { emote ->
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(NeoLudoColors.ObsidianSurface)
-                            .clickable { onSelectEmote(emote) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = emote, fontSize = 20.sp)
-                    }
+            emotes.forEach { emote ->
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(StadiumColors.Card)
+                        .clickable { onSelectEmote(emote) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = emote, fontSize = 22.sp)
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-            // 6 Tactical Chat Pills
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                quickChats.take(3).forEach { msg ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoLudoColors.ObsidianSurface)
-                            .clickable { onSelectChat(msg) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = msg,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                quickChats.drop(3).forEach { msg ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoLudoColors.ObsidianSurface)
-                            .clickable { onSelectChat(msg) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = msg,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+        // Wrapping chat pills.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            quickChats.forEach { msg ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(StadiumColors.Card)
+                        .clickable { onSelectChat(msg) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = msg,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -1121,9 +1117,9 @@ private fun InGameQuickSettingsDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Settings, contentDescription = null, tint = NeoLudoColors.CobaltBlue)
+                Icon(Icons.Default.Settings, contentDescription = null, tint = StadiumColors.AccentBright)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("In-Match Settings", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("In-Match Settings", color = StadiumColors.TextPrimary, fontWeight = FontWeight.Bold)
             }
         },
         text = {
@@ -1134,7 +1130,7 @@ private fun InGameQuickSettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Sound Effects", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("Sound Effects", color = StadiumColors.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Switch(
                         checked = soundEnabled,
                         onCheckedChange = {
@@ -1143,7 +1139,7 @@ private fun InGameQuickSettingsDialog(
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
-                            checkedTrackColor = NeoLudoColors.EmeraldGreen
+                            checkedTrackColor = StadiumColors.Success
                         )
                     )
                 }
@@ -1155,8 +1151,8 @@ private fun InGameQuickSettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Volume", color = NeoLudoColors.ObsidianTextSecondary, fontSize = 12.sp)
-                    Text("${(soundVolume * 100).toInt()}%", color = NeoLudoColors.EmeraldGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Volume", color = StadiumColors.TextSecondary, fontSize = 12.sp)
+                    Text("${(soundVolume * 100).toInt()}%", color = StadiumColors.Success, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Slider(
                     value = soundVolume,
@@ -1165,8 +1161,8 @@ private fun InGameQuickSettingsDialog(
                         soundController.soundVolume = it
                     },
                     colors = SliderDefaults.colors(
-                        thumbColor = NeoLudoColors.EmeraldGreen,
-                        activeTrackColor = NeoLudoColors.EmeraldGreen
+                        thumbColor = StadiumColors.Success,
+                        activeTrackColor = StadiumColors.Success
                     )
                 )
 
@@ -1177,21 +1173,21 @@ private fun InGameQuickSettingsDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(NeoLudoColors.RubyRed.copy(alpha = 0.15f))
-                        .border(1.dp, NeoLudoColors.RubyRed.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .background(StadiumColors.Danger.copy(alpha = 0.15f))
+                        .border(1.dp, StadiumColors.Danger.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                         .clickable { onSurrenderClick() }
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Leave Match", color = NeoLudoColors.RubyRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Leave Match", color = StadiumColors.Danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Done", color = NeoLudoColors.CobaltBlue, fontWeight = FontWeight.Bold)
+                Text("Done", color = StadiumColors.AccentBright, fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = NeoLudoColors.ObsidianSurfaceCard
+        containerColor = StadiumColors.CardElevated
     )
 }

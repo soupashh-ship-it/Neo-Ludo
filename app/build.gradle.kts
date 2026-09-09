@@ -17,8 +17,8 @@ android {
         applicationId = "com.neoludo.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.0.0"
+        versionCode = 17
+        versionName = "2.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

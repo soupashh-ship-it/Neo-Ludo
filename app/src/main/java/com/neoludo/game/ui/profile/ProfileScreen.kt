@@ -48,9 +48,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neoludo.game.core.designsystem.AdaptiveScroll
 import com.neoludo.game.core.designsystem.NeoLudoButton
 import com.neoludo.game.core.designsystem.NeoLudoCard
 import com.neoludo.game.core.designsystem.NeoLudoColors
+import com.neoludo.game.core.designsystem.NeoLudoSectionLabel
+import com.neoludo.game.core.designsystem.NeoLudoSpacing
+import com.neoludo.game.core.designsystem.ScreenHeader
+import com.neoludo.game.core.designsystem.StadiumBackground
+import com.neoludo.game.core.designsystem.StadiumColors
 import com.neoludo.game.core.model.MatchRecord
 import com.neoludo.game.core.model.UserProfile
 import com.neoludo.game.core.model.UserStats
@@ -80,63 +86,23 @@ fun ProfileScreen(
     )
 
     val avatarColors = listOf(
-        NeoLudoColors.CobaltBlue, NeoLudoColors.EmeraldGreen, NeoLudoColors.RubyRed, NeoLudoColors.AmberYellow,
+        StadiumColors.Accent, StadiumColors.Success, StadiumColors.Danger, StadiumColors.Gold,
         Color(0xFF9C27B0), Color(0xFFFF5722), Color(0xFF00BCD4), Color(0xFFE91E63),
         Color(0xFF3F51B5), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFF795548),
         Color(0xFF607D8B), Color(0xFF673AB7), Color(0xFF8BC34A), Color(0xFF009688)
     )
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NeoLudoColors.ObsidianBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(36.dp))
+    StadiumBackground(modifier = modifier) {
+        AdaptiveScroll {
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.md))
 
-            // Top Bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(NeoLudoColors.ObsidianSurfaceCard)
-                        .border(1.dp, NeoLudoColors.ObsidianBorder, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = "PLAYER CAREER PROFILE",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 18.sp,
-                        letterSpacing = 0.5.sp
-                    )
-                    Text(
-                        text = "Manage identity, badges & career stats",
-                        color = NeoLudoColors.ObsidianTextSecondary,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            ScreenHeader(
+                title = "Career profile",
+                subtitle = "Manage identity, badges & career stats",
+                onBack = onBack
+            )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(NeoLudoSpacing.xl))
 
             // Identity Card: Avatar + Name + Title
             NeoLudoCard(modifier = Modifier.fillMaxWidth()) {
@@ -145,7 +111,7 @@ fun ProfileScreen(
                         modifier = Modifier
                             .size(76.dp)
                             .clip(CircleShape)
-                            .background(avatarColors.getOrElse(selectedAvatarId - 1) { NeoLudoColors.CobaltBlue })
+                            .background(avatarColors.getOrElse(selectedAvatarId - 1) { StadiumColors.Accent })
                             .border(3.dp, Color.White.copy(alpha = 0.8f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
@@ -159,11 +125,11 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Player Title Badge
+                    // Player Title Badge (prestige = gold, reward-only color)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = NeoLudoColors.AmberYellow.copy(alpha = 0.2f),
-                        border = BorderStroke(1.dp, NeoLudoColors.AmberYellow)
+                        color = StadiumColors.Gold.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, StadiumColors.Gold)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -172,13 +138,13 @@ fun ProfileScreen(
                             Icon(
                                 imageVector = Icons.Default.MilitaryTech,
                                 contentDescription = null,
-                                tint = NeoLudoColors.AmberYellow,
+                                tint = StadiumColors.Gold,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = selectedTitle,
-                                color = NeoLudoColors.AmberYellow,
+                                color = StadiumColors.Gold,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -190,14 +156,14 @@ fun ProfileScreen(
                     OutlinedTextField(
                         value = displayName,
                         onValueChange = { if (it.length <= 16) displayName = it },
-                        label = { Text("Display Name", color = NeoLudoColors.ObsidianTextSecondary) },
-                        textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                        label = { Text("Display Name", color = StadiumColors.TextSecondary) },
+                        textStyle = TextStyle(color = StadiumColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeoLudoColors.CobaltBlue,
-                            unfocusedBorderColor = NeoLudoColors.ObsidianBorder,
-                            focusedContainerColor = NeoLudoColors.ObsidianSurface,
-                            unfocusedContainerColor = NeoLudoColors.ObsidianSurface
+                            focusedBorderColor = StadiumColors.Accent,
+                            unfocusedBorderColor = StadiumColors.Border,
+                            focusedContainerColor = StadiumColors.CardElevated,
+                            unfocusedContainerColor = StadiumColors.CardElevated
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -206,13 +172,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Select Player Title Chips
-                    Text(
-                        text = "SELECT PLAYER TITLE",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    NeoLudoSectionLabel(text = "Player title")
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
@@ -225,10 +185,10 @@ fun ProfileScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isSelected) NeoLudoColors.AmberYellow.copy(alpha = 0.2f) else NeoLudoColors.ObsidianSurface)
+                                    .background(if (isSelected) StadiumColors.Gold.copy(alpha = 0.15f) else StadiumColors.CardElevated)
                                     .border(
                                         1.2.dp,
-                                        if (isSelected) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianBorder,
+                                        if (isSelected) StadiumColors.Gold else StadiumColors.Border,
                                         RoundedCornerShape(10.dp)
                                     )
                                     .clickable { selectedTitle = title }
@@ -237,7 +197,7 @@ fun ProfileScreen(
                             ) {
                                 Text(
                                     text = title,
-                                    color = if (isSelected) NeoLudoColors.AmberYellow else Color.White,
+                                    color = if (isSelected) StadiumColors.Gold else StadiumColors.TextPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -255,10 +215,10 @@ fun ProfileScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isSelected) NeoLudoColors.AmberYellow.copy(alpha = 0.2f) else NeoLudoColors.ObsidianSurface)
+                                    .background(if (isSelected) StadiumColors.Gold.copy(alpha = 0.15f) else StadiumColors.CardElevated)
                                     .border(
                                         1.2.dp,
-                                        if (isSelected) NeoLudoColors.AmberYellow else NeoLudoColors.ObsidianBorder,
+                                        if (isSelected) StadiumColors.Gold else StadiumColors.Border,
                                         RoundedCornerShape(10.dp)
                                     )
                                     .clickable { selectedTitle = title }
@@ -267,7 +227,7 @@ fun ProfileScreen(
                             ) {
                                 Text(
                                     text = title,
-                                    color = if (isSelected) NeoLudoColors.AmberYellow else Color.White,
+                                    color = if (isSelected) StadiumColors.Gold else StadiumColors.TextPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -278,13 +238,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 16 Curated Avatar Themes
-                    Text(
-                        text = "SELECT AVATAR THEME",
-                        color = NeoLudoColors.ObsidianTextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    NeoLudoSectionLabel(text = "Avatar theme")
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
@@ -358,13 +312,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Career Performance Breakdown KPI Grid
-            Text(
-                text = "LIFETIME CAREER STATISTICS",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Lifetime career statistics")
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(
@@ -374,19 +322,19 @@ fun ProfileScreen(
                 CareerKpiCard(
                     title = "Matches",
                     value = "${stats.totalMatches}",
-                    color = NeoLudoColors.CobaltBlue,
+                    color = StadiumColors.Accent,
                     modifier = Modifier.weight(1f)
                 )
                 CareerKpiCard(
                     title = "Victories",
                     value = "${stats.totalWins}",
-                    color = NeoLudoColors.EmeraldGreen,
+                    color = StadiumColors.Success,
                     modifier = Modifier.weight(1f)
                 )
                 CareerKpiCard(
                     title = "Win Rate",
                     value = "${stats.winRate.toInt()}%",
-                    color = NeoLudoColors.AmberYellow,
+                    color = StadiumColors.Gold,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -407,13 +355,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Match History List
-            Text(
-                text = "RECENT MATCH HISTORY",
-                color = NeoLudoColors.ObsidianTextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            NeoLudoSectionLabel(text = "Recent match history")
             Spacer(modifier = Modifier.height(10.dp))
 
             if (stats.matchHistory.isEmpty()) {
@@ -427,19 +369,19 @@ fun ProfileScreen(
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = null,
-                            tint = NeoLudoColors.ObsidianTextMuted,
+                            tint = StadiumColors.TextMuted,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "No matches recorded yet",
-                            color = Color.White,
+                            color = StadiumColors.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Text(
                             text = "Complete matches to build your career log!",
-                            color = NeoLudoColors.ObsidianTextSecondary,
+                            color = StadiumColors.TextSecondary,
                             fontSize = 12.sp
                         )
                     }
@@ -455,7 +397,6 @@ fun ProfileScreen(
 
             NeoLudoButton(
                 text = "Save Changes",
-                accentColor = NeoLudoColors.BrutalistBlue,
                 enabled = displayName.trim().isNotBlank(),
                 onClick = {
                     onSaveProfile(
@@ -473,7 +414,7 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Display name can't be empty.",
-                    color = NeoLudoColors.BrutalistRed,
+                    color = StadiumColors.Danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -522,7 +463,7 @@ private fun CareerKpiCard(
 @Composable
 private fun MatchHistoryCard(match: MatchRecord) {
     val isWin = match.isWin
-    val accentColor = if (isWin) NeoLudoColors.EmeraldGreen else NeoLudoColors.RubyRed
+    val accentColor = if (isWin) StadiumColors.Success else StadiumColors.Danger
     val sdf = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     val dateStr = runCatching { sdf.format(Date(match.timestamp)) }.getOrDefault("Recent")
 
@@ -530,8 +471,8 @@ private fun MatchHistoryCard(match: MatchRecord) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, NeoLudoColors.ObsidianBorder, RoundedCornerShape(14.dp)),
-        color = NeoLudoColors.ObsidianSurfaceCard,
+            .border(1.dp, StadiumColors.Border, RoundedCornerShape(14.dp)),
+        color = StadiumColors.Card,
         shape = RoundedCornerShape(14.dp)
     ) {
         Row(
@@ -563,7 +504,7 @@ private fun MatchHistoryCard(match: MatchRecord) {
                 )
                 Text(
                     text = dateStr,
-                    color = NeoLudoColors.ObsidianTextMuted,
+                    color = StadiumColors.TextMuted,
                     fontSize = 11.sp
                 )
             }
@@ -573,7 +514,7 @@ private fun MatchHistoryCard(match: MatchRecord) {
                     Icon(
                         imageVector = Icons.Default.Shield,
                         contentDescription = "Captures",
-                        tint = NeoLudoColors.RubyRed,
+                        tint = StadiumColors.Danger,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(3.dp))
@@ -588,7 +529,7 @@ private fun MatchHistoryCard(match: MatchRecord) {
                     Icon(
                         imageVector = Icons.Default.Casino,
                         contentDescription = "Sixes",
-                        tint = NeoLudoColors.AmberYellow,
+                        tint = StadiumColors.Gold,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(3.dp))
@@ -611,7 +552,7 @@ private fun ProfileStatRow(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, color = NeoLudoColors.ObsidianTextSecondary, fontSize = 14.sp)
-        Text(text = value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(text = label, color = StadiumColors.TextSecondary, fontSize = 14.sp)
+        Text(text = value, color = StadiumColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
 }
