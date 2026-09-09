@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -383,14 +384,22 @@ fun GameScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.weight(1f, fill = true))
 
             // 3. Canvas Ludo Game Board with Step-by-Step Hopping Physics & Custom Skins
-            // Width-capped on tablets so HUD + tray keep their budget.
+            // Centered in leftover space (width-capped on tablets, height-capped
+            // on short screens); tray stays anchored at the bottom.
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val boardSide = minOf(maxWidth, maxHeight, StadiumDimens.BoardMax)
+                    .coerceAtLeast(120.dp)
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = StadiumDimens.BoardMax)
+                    .size(boardSide)
                     .semantics {
                         contentDescription = "Ludo board. ${state.activePlayer.name}'s turn. " +
                             "Dice showing ${state.diceState.value}. " +
@@ -408,6 +417,8 @@ fun GameScreen(
                                 delay(300)
                                 isExecutingMove = false
                             }
+                        } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
+                            actionError = "Waiting for ${state.activePlayer.name}…"
                         }
                     },
                     onStepHop = {
@@ -431,16 +442,25 @@ fun GameScreen(
                     }
                 }
             }
+            }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (state.players.size == 2) {
-                // 4. Dedicated 2-Player Arcade Bottom Bar (Matching Reference Image #1)
+                // 4. Dedicated 2-Player Arcade Bottom Bar — locality-aware: each
+                // seat shows its real owner, and only the local seat is actionable.
+                val onlineUid = (client as? OnlineRoomClient)?.currentUid
+                val localTurn = isLocalHumanTurn(client, state)
                 TwoPlayerArcadeBottomBar(
                     state = state,
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
                     motionEnabled = !reducedMotion,
+                    localUid = onlineUid,
+                    isLocalTurn = localTurn,
+                    onNotLocalTap = {
+                        if (!state.isGameOver) actionError = "Waiting for ${state.activePlayer.name}…"
+                    },
                     onRollDice = {
                         if (!isRollingAnimation && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
@@ -451,6 +471,8 @@ fun GameScreen(
                                 delay(300)
                                 isRollingAnimation = false
                             }
+                        } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
+                            actionError = "Waiting for ${state.activePlayer.name}…"
                         }
                     }
                 )
@@ -500,6 +522,8 @@ fun GameScreen(
                                 delay(300)
                                 isRollingAnimation = false
                             }
+                        } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
+                            actionError = "Waiting for ${state.activePlayer.name}…"
                         }
                     }
                 )
@@ -817,8 +841,8 @@ private fun TurnActionTray(
             )
         }
 
-        // Classic die — one look for everyone.
-        val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
+        // Classic die — bright only when THIS device can actually roll.
+        val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling && isLocalTurn
         ClassicDice(
             value = state.diceState.value,
             rolling = isRolling,
@@ -835,12 +859,24 @@ private fun TwoPlayerArcadeBottomBar(
     isRolling: Boolean,
     diceSkin: DiceSkin,
     onRollDice: () -> Unit,
-    motionEnabled: Boolean = true
+    motionEnabled: Boolean = true,
+    /** Online uid of THIS device (null for local/AI games where every seat is local). */
+    localUid: String? = null,
+    /** True when the active seat belongs to this device. */
+    isLocalTurn: Boolean = true,
+    onNotLocalTap: () -> Unit = {}
 ) {
     val p1 = state.players.getOrNull(0) ?: return
     val p2 = state.players.getOrNull(1) ?: return
     val isP1Turn = state.activePlayerIndex == 0
     val isP2Turn = state.activePlayerIndex == 1
+    // Local pass-and-play: every human seat is on this device.
+    val p1IsLocal = p1.isBot || localUid == null || p1.id == localUid
+    val p2IsLocal = p2.isBot || localUid == null || p2.id == localUid
+    // Honest die: bright only when THIS device can actually roll.
+    val canInteract = !state.activePlayer.isBot &&
+        state.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
+        state.diceState.canRoll && !isRolling && isLocalTurn
 
     Surface(
         modifier = Modifier
@@ -853,11 +889,11 @@ private fun TwoPlayerArcadeBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Player 1 (Left Side - "You")
+            // Player 1 (left seat — real owner, never a blanket "You")
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -869,29 +905,37 @@ private fun TwoPlayerArcadeBottomBar(
                             modifier = Modifier
                                 .size(46.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFFFD54F).copy(alpha = 0.3f))
-                                .border(2.dp, Color(0xFFFFD54F), CircleShape)
+                                .background(StadiumColors.Gold.copy(alpha = 0.25f))
+                                .border(2.dp, StadiumColors.Gold, CircleShape)
                         )
                     }
                     MiniMapPinIcon(
                         color = NeoLudoColors.getPlayerColor(p1.color),
-                        sizeDp = 36.dp
+                        sizeDp = 34.dp
                     )
                 }
 
-                Column {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Text(
-                        text = if (p1.isBot) p1.name else "You",
-                        color = if (isP1Turn) Color(0xFFFFD54F) else Color.White,
+                        text = seatLabel(p1.name, p1.isBot, p1IsLocal, localUid),
+                        color = if (isP1Turn) StadiumColors.Gold else StadiumColors.TextPrimary,
                         fontWeight = FontWeight.Black,
-                        fontSize = 18.sp
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     if (isP1Turn) {
                         Text(
-                            text = if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL) "Tap Dice" else "Move",
-                            color = NeoLudoColors.EmeraldGreen,
+                            text = seatHint(
+                                isLocal = p1IsLocal,
+                                phase = state.turnPhase,
+                                rollHint = "Tap dice",
+                                moveHint = "Move"
+                            ),
+                            color = if (p1IsLocal) StadiumColors.Success else StadiumColors.TextMuted,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            maxLines = 1
                         )
                     }
                 }
@@ -910,36 +954,55 @@ private fun TwoPlayerArcadeBottomBar(
                     modifier = Modifier.padding(6.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    val canInteract = !state.activePlayer.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling
+                    // Tapping a dimmed die tells you whose turn it is instead
+                    // of dying silently (inner die consumes taps when live).
+                    val hintTap = !canInteract && !isLocalTurn &&
+                        !state.activePlayer.isBot && !state.isGameOver
                     ClassicDice(
                         value = state.diceState.value,
                         rolling = isRolling,
                         enabled = canInteract,
-                        onClick = { if (canInteract) onRollDice() },
-                        sizeDp = 64.dp
+                        onClick = { if (canInteract) onRollDice() else onNotLocalTap() },
+                        sizeDp = 56.dp,
+                        modifier = Modifier.clickable(
+                            enabled = hintTap,
+                            role = androidx.compose.ui.semantics.Role.Button,
+                            onClick = onNotLocalTap
+                        )
                     )
                 }
             }
 
-            // Player 2 (Right Side - "Com")
+            // Player 2 (right seat)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
                 modifier = Modifier.weight(1f)
             ) {
-                Column(horizontalAlignment = Alignment.End) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
                     Text(
-                        text = if (p2.isBot) "Com" else p2.name,
-                        color = if (isP2Turn) Color(0xFFFFD54F) else Color.White,
+                        text = seatLabel(p2.name, p2.isBot, p2IsLocal, localUid),
+                        color = if (isP2Turn) StadiumColors.Gold else StadiumColors.TextPrimary,
                         fontWeight = FontWeight.Black,
-                        fontSize = 18.sp
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     if (isP2Turn) {
                         Text(
-                            text = if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL) "Rolling..." else "Moving",
-                            color = NeoLudoColors.EmeraldGreen,
+                            text = seatHint(
+                                isLocal = p2IsLocal,
+                                phase = state.turnPhase,
+                                rollHint = "Tap dice",
+                                moveHint = "Move"
+                            ),
+                            color = if (p2IsLocal) StadiumColors.Success else StadiumColors.TextMuted,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            maxLines = 1
                         )
                     }
                 }
@@ -952,18 +1015,38 @@ private fun TwoPlayerArcadeBottomBar(
                             modifier = Modifier
                                  .size(46.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFFFD54F).copy(alpha = 0.3f))
-                                .border(2.dp, Color(0xFFFFD54F), CircleShape)
+                                .background(StadiumColors.Gold.copy(alpha = 0.25f))
+                                .border(2.dp, StadiumColors.Gold, CircleShape)
                         )
                     }
                     MiniMapPinIcon(
                         color = NeoLudoColors.getPlayerColor(p2.color),
-                        sizeDp = 36.dp
+                        sizeDp = 34.dp
                     )
                 }
             }
         }
     }
+}
+
+/** Seat owner label — "You" only ever marks THIS device's seat. */
+private fun seatLabel(name: String, isBot: Boolean, isLocal: Boolean, localUid: String?): String {
+    if (isBot) return if (name == "Com") "Com" else name
+    if (localUid == null) return if (name.isBlank()) "You" else name
+    return if (isLocal) "$name • You" else name
+}
+
+/** Per-seat turn hint — instructions only for the local seat. */
+private fun seatHint(
+    isLocal: Boolean,
+    phase: TurnPhase,
+    rollHint: String,
+    moveHint: String
+): String {
+    if (isLocal) {
+        return if (phase == TurnPhase.WAITING_FOR_ROLL) rollHint else moveHint
+    }
+    return if (phase == TurnPhase.WAITING_FOR_ROLL) "Thinking…" else "Moving…"
 }
 
 @Composable
