@@ -139,17 +139,13 @@ fun GameScreen(
         showSurrenderDialog = true
     }
 
-    // Turn timer progress
     val timerProgress = remember { Animatable(1f) }
     var autoActedNotice by remember { mutableStateOf(false) }
-    // Last tap rejection ("not your turn", link hiccup) — shown briefly so
-    // taps never die silently.
     var actionError by remember { mutableStateOf<String?>(null) }
+    // One tap, one in-flight action — stale taps during that 2.2s guest-host window were silently winning/losing the race.
+    var pendingAction by remember { mutableStateOf(false) }
     LaunchedEffect(actionError) {
-        if (actionError != null) {
-            delay(2500)
-            actionError = null
-        }
+        if (actionError != null) { delay(2600); actionError = null }
     }
 
     // Listen to active turn changes to reset timer animation and handle AFK timeout
@@ -311,19 +307,12 @@ fun GameScreen(
             .background(palette.background)
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(360.dp)
-                .background(
-                    androidx.compose.ui.graphics.Brush.radialGradient(
-                        colors = listOf(
-                            StadiumColors.Spotlight.copy(alpha = 0.28f),
-                            Color.Transparent
-                        ),
-                        center = Offset(600f, 0f),
-                        radius = 900f
-                    )
+            modifier = Modifier.fillMaxSize().background(
+                androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(StadiumColors.Spotlight.copy(alpha = 0.26f), Color.Transparent),
+                    center = Offset(600f, 0f), radius = 1100f
                 )
+            )
         )
         Column(
             modifier = Modifier
@@ -406,15 +395,24 @@ fun GameScreen(
                 CanvasLudoBoard(
                     gameState = state,
                     onPieceClick = { pieceId ->
-                        if (!isExecutingMove && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
+                        if (!isExecutingMove && !pendingAction && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_MOVE) {
                             scope.launch {
-                                isExecutingMove = true
-                                client.movePiece(pieceId).onFailure { actionError = it.message }
-                                delay(300)
-                                isExecutingMove = false
+                                isExecutingMove = true; pendingAction = true
+                                val r = client.movePiece(pieceId)
+                                r.onFailure {
+                                    val msg = it.message ?: ""
+                                    actionError = when {
+                                        msg.contains("not confirmed", true) || msg.contains("Stale", true) -> "Syncing… tap again"
+                                        msg.contains("Synced", true) -> "Synced — tap again"
+                                        else -> it.message
+                                    }
+                                }
+                                delay(280); isExecutingMove = false; pendingAction = false
                             }
                         } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
                             actionError = "Waiting for ${state.activePlayer.name}…"
+                        } else if (pendingAction) {
+                            actionError = "Syncing…"
                         }
                     },
                     onStepHop = {
@@ -458,19 +456,23 @@ fun GameScreen(
                         if (!state.isGameOver) actionError = "Waiting for ${state.activePlayer.name}…"
                     },
                     onRollDice = {
+                        if (pendingAction) { actionError = "Syncing…"; return@TwoPlayerArcadeBottomBar }
                         if (!isRollingAnimation && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
-                                isRollingAnimation = true
+                                isRollingAnimation = true; pendingAction = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
                                 hapticController.perform(HapticType.MEDIUM_CLICK)
-                                client.rollDice().onFailure { actionError = it.message }
-                                delay(300)
-                                isRollingAnimation = false
+                                client.rollDice().onFailure {
+                                    val m = it.message ?: ""
+                                    actionError = if (m.contains("not confirmed", true) || m.contains("Stale", true)) "Syncing… tap again" else m
+                                }
+                                delay(300); isRollingAnimation = false; pendingAction = false
                             }
                         } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
                             actionError = "Waiting for ${state.activePlayer.name}…"
                         }
-                    }
+                    },
+                    pendingAction = pendingAction
                 )
             } else {
                 // 4-Player Bottom Plates
@@ -504,19 +506,23 @@ fun GameScreen(
                     state = state,
                     isRolling = isRollingAnimation,
                     diceSkin = diceSkin,
+                    pendingAction = pendingAction,
                     secondsLeft = ((state.ruleSet.turnTimerSeconds * timerProgress.value).toInt().coerceIn(0, state.ruleSet.turnTimerSeconds)),
                     autoActed = autoActedNotice,
                     isLocalTurn = isLocalHumanTurn(client, state),
                     motionEnabled = !reducedMotion,
                     onRollDice = {
+                        if (pendingAction) { actionError = "Syncing…"; return@TurnActionTray }
                         if (!isRollingAnimation && !state.isGameOver && isLocalHumanTurn(client, state) && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll) {
                             scope.launch {
-                                isRollingAnimation = true
+                                isRollingAnimation = true; pendingAction = true
                                 soundController.play(SoundEffect.BUTTON_CLICK)
                                 hapticController.perform(HapticType.MEDIUM_CLICK)
-                                client.rollDice().onFailure { actionError = it.message }
-                                delay(300)
-                                isRollingAnimation = false
+                                client.rollDice().onFailure {
+                                    val m = it.message ?: ""
+                                    actionError = if (m.contains("not confirmed", true) || m.contains("Stale", true)) "Syncing… tap again" else m
+                                }
+                                delay(300); isRollingAnimation = false; pendingAction = false
                             }
                         } else if (!state.isGameOver && !isLocalHumanTurn(client, state)) {
                             actionError = "Waiting for ${state.activePlayer.name}…"
@@ -723,7 +729,8 @@ private fun TurnActionTray(
     secondsLeft: Int = -1,
     autoActed: Boolean = false,
     isLocalTurn: Boolean = true,
-    motionEnabled: Boolean = true
+    motionEnabled: Boolean = true,
+    pendingAction: Boolean = false
 ) {
     val active = state.activePlayer
     val playerColor = NeoLudoColors.getBrutalistPlayerColor(active.color)
@@ -837,8 +844,7 @@ private fun TurnActionTray(
             )
         }
 
-        // Classic die — bright only when THIS device can actually roll.
-        val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling && isLocalTurn
+        val canInteract = !active.isBot && state.turnPhase == TurnPhase.WAITING_FOR_ROLL && state.diceState.canRoll && !isRolling && isLocalTurn && !pendingAction
         ClassicDice(
             value = state.diceState.value,
             rolling = isRolling,
@@ -856,11 +862,10 @@ private fun TwoPlayerArcadeBottomBar(
     diceSkin: DiceSkin,
     onRollDice: () -> Unit,
     motionEnabled: Boolean = true,
-    /** Online uid of THIS device (null for local/AI games where every seat is local). */
     localUid: String? = null,
-    /** True when the active seat belongs to this device. */
     isLocalTurn: Boolean = true,
-    onNotLocalTap: () -> Unit = {}
+    onNotLocalTap: () -> Unit = {},
+    pendingAction: Boolean = false
 ) {
     val p1 = state.players.getOrNull(0) ?: return
     val p2 = state.players.getOrNull(1) ?: return
@@ -869,10 +874,10 @@ private fun TwoPlayerArcadeBottomBar(
     // Local pass-and-play: every human seat is on this device.
     val p1IsLocal = p1.isBot || localUid == null || p1.id == localUid
     val p2IsLocal = p2.isBot || localUid == null || p2.id == localUid
-    // Honest die: bright only when THIS device can actually roll.
+    val pending = pendingAction
     val canInteract = !state.activePlayer.isBot &&
         state.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-        state.diceState.canRoll && !isRolling && isLocalTurn
+        state.diceState.canRoll && !isRolling && isLocalTurn && !pending
 
     Surface(
         modifier = Modifier

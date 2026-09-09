@@ -110,32 +110,45 @@ class AuthoritativeGameProcessor(
         )
     }
 
+    sealed class Rejection(val reason: String) {
+        data object StaleVersion : Rejection("stale_version")
+        data object StaleEpoch : Rejection("stale_epoch")
+        data object WrongPlayer : Rejection("wrong_player")
+        data object WrongPhase : Rejection("wrong_phase")
+        data object IllegalMove : Rejection("illegal_move")
+        data object Duplicate : Rejection("duplicate")
+        data object GameOver : Rejection("game_over")
+        data object AuthorityMismatch : Rejection("authority_mismatch")
+        data object HostMissing : Rejection("host_missing")
+        data object InvalidPayload : Rejection("invalid_payload")
+    }
+
+    var lastRejection: Rejection? = null
+        private set
+
+    fun clearRejection() { lastRejection = null }
+
     fun processAction(
         action: NetworkAction,
         currentState: GameState,
         currentMeta: RoomMetadata
     ): ProcessedActionResult? {
+        lastRejection = null
         if (deduplicator.isDuplicateOrStale(action.actionId, action.sequence, action.playerId)) {
-            return null
+            lastRejection = Rejection.Duplicate; return null
         }
 
-        if (currentState.isGameOver) {
-            return null
+        if (currentState.isGameOver) { lastRejection = Rejection.GameOver; return null }
+
+        if (action.expectedVersion < 0L || action.expectedHostEpoch < 1L) { lastRejection = Rejection.HostMissing; return null }
+        if (action.expectedVersion != currentState.version) { lastRejection = Rejection.StaleVersion; return null }
+        if (action.expectedHostEpoch != currentMeta.hostEpoch) { lastRejection = Rejection.StaleEpoch; return null }
+        if (currentState.authorityEpoch != currentMeta.hostEpoch || currentState.authorityHostId != currentMeta.hostId) {
+            lastRejection = Rejection.AuthorityMismatch; return null
         }
 
-        // Every production action MUST be fenced to both the game revision and
-        // authority generation.  Old 1.9.x frames decode with -1 defaults, but
-        // accepting those after host migration would let a Firebase child replay
-        // (or a delayed MQTT packet) mutate a later turn.
-        if (action.expectedVersion < 0L || action.expectedHostEpoch < 1L) return null
-        if (action.expectedVersion != currentState.version) return null
-        if (action.expectedHostEpoch != currentMeta.hostEpoch) return null
-        if (currentState.authorityEpoch != currentMeta.hostEpoch) return null
-        if (currentState.authorityHostId != currentMeta.hostId) return null
-
-        // Backward compatibility with 1.9.x PASS_TURN messages which encoded v= in payload.
         action.payload.substringAfter("v=", "").substringBefore(";").toLongOrNull()?.let { expected ->
-            if (expected != currentState.version) return null
+            if (expected != currentState.version) { lastRejection = Rejection.StaleVersion; return null }
         }
 
         val activePlayer = currentState.activePlayer
@@ -143,14 +156,8 @@ class AuthoritativeGameProcessor(
 
         return when (action.type) {
             ActionType.ROLL_DICE -> {
-                // The action always names the canonical active seat. Host proxying for a
-                // bot/disconnected seat still uses that seat id, never the host id.
-                if (action.playerId != activePlayer.id) {
-                    return null
-                }
-                if (currentState.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
-                    return null
-                }
+                if (action.playerId != activePlayer.id) { lastRejection = Rejection.WrongPlayer; return null }
+                if (currentState.turnPhase != TurnPhase.WAITING_FOR_ROLL) { lastRejection = Rejection.WrongPhase; return null }
 
                 // Forged-dice fix: normal clients send payload="" and the host rolls random.
                 // Numeric payloads are only honored when allowForcedDice=true (tests).
@@ -216,19 +223,14 @@ class AuthoritativeGameProcessor(
             }
 
             ActionType.MOVE_PIECE -> {
-                if (action.playerId != activePlayer.id) {
-                    return null
-                }
-                if (currentState.turnPhase != TurnPhase.WAITING_FOR_MOVE) {
-                    return null
-                }
+                if (action.playerId != activePlayer.id) { lastRejection = Rejection.WrongPlayer; return null }
+                if (currentState.turnPhase != TurnPhase.WAITING_FOR_MOVE) { lastRejection = Rejection.WrongPhase; return null }
 
-                val pieceId = action.payload.substringBefore(";").toIntOrNull() ?: return null
-                // Validate against the full canonical rule calculation, including exact-home
-                // and capture/safe-cell semantics, not only distance arithmetic.
+                val pieceId = action.payload.substringBefore(";").toIntOrNull()
+                    ?: run { lastRejection = Rejection.InvalidPayload; return null }
                 if (MoveValidator.getLegalMoves(activePlayer, currentState.diceState.value, currentState.players)
                         .none { it.piece.id == pieceId }) {
-                    return null
+                    lastRejection = Rejection.IllegalMove; return null
                 }
 
                 val nextState = LudoGameEngine.movePiece(currentState, pieceId)
@@ -303,15 +305,8 @@ class AuthoritativeGameProcessor(
             }
 
             ActionType.PASS_TURN -> {
-                if (action.playerId != activePlayer.id) {
-                    return null
-                }
-                // Phase guard: PASS_TURN is only valid while waiting for a roll.
-                // Prevents replayed PASS_TURN (full-history re-delivery on host migration)
-                // from advancing the turn a second time mid-move.
-                if (currentState.turnPhase != TurnPhase.WAITING_FOR_ROLL) {
-                    return null
-                }
+                if (action.playerId != activePlayer.id) { lastRejection = Rejection.WrongPlayer; return null }
+                if (currentState.turnPhase != TurnPhase.WAITING_FOR_ROLL) { lastRejection = Rejection.WrongPhase; return null }
                 val nextState = LudoGameEngine.passTurn(currentState)
                 // passTurn is a no-op guard internally too; only mark when version advanced.
                 if (nextState.version == currentState.version) return null

@@ -114,16 +114,15 @@ fun StadiumBackground(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(420.dp)
+                .fillMaxSize()
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            StadiumColors.Spotlight.copy(alpha = 0.32f),
+                            StadiumColors.Spotlight.copy(alpha = 0.30f),
                             Color.Transparent
                         ),
                         center = Offset(600f, 0f),
-                        radius = 900f
+                        radius = 1100f
                     )
                 )
         )

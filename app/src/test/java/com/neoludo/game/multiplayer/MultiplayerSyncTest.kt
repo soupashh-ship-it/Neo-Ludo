@@ -133,7 +133,9 @@ class MultiplayerSyncTest {
             activePlayerIndex = 0,
             turnPhase = TurnPhase.WAITING_FOR_MOVE,
             diceState = com.neoludo.game.engine.model.DiceState(value = 3, isRolled = true, canRoll = false),
-            version = 5L
+            version = 5L,
+            authorityEpoch = meta.hostEpoch,
+            authorityHostId = meta.hostId
         )
 
         // Red moves piece 0 with roll 3 (7 + 3 = 10 -> lands on Green)
@@ -268,7 +270,9 @@ class MultiplayerSyncTest {
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
             diceState = com.neoludo.game.engine.model.DiceState(value = 6, consecutiveSixes = 2, canRoll = true),
             ruleSet = LudoRuleSet(penalty3xSix = true),
-            version = 10L
+            version = 10L,
+            authorityEpoch = meta.hostEpoch,
+            authorityHostId = meta.hostId
         )
 
         // Roll forced 6 as 3rd consecutive 6
@@ -294,7 +298,9 @@ class MultiplayerSyncTest {
             activePlayerIndex = 0,
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
             diceState = com.neoludo.game.engine.model.DiceState(value = 1, canRoll = true),
-            version = 0L
+            version = 0L,
+            authorityEpoch = meta.hostEpoch,
+            authorityHostId = meta.hostId
         )
         // Attacker posts ROLL with payload 6 fifty times — none may force a 6 deterministically
         // (prod ignores payload; result is random). We assert only that processing succeeds

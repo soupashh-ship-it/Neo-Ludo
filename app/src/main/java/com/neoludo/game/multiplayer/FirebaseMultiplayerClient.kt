@@ -19,6 +19,7 @@ import com.neoludo.game.multiplayer.model.RoomError
 import com.neoludo.game.multiplayer.model.RoomMetadata
 import com.neoludo.game.multiplayer.model.RoomSnapshot
 import com.neoludo.game.multiplayer.model.RoomStatus
+import com.neoludo.game.engine.model.PlayerState
 import com.neoludo.game.multiplayer.repository.ActionRepository
 import com.neoludo.game.multiplayer.repository.ChatRepository
 import com.neoludo.game.multiplayer.repository.GameRepository
@@ -47,6 +48,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
@@ -421,55 +423,74 @@ class FirebaseMultiplayerClient(
     }
 
     override suspend fun rollDice(): Result<Unit> = withContext(Dispatchers.IO) {
-        val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(
-            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
-        )
-        val active = state.activePlayer
-
-        val isHost = snapshot.meta.hostId == currentUid
-        if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
-            return@withContext Result.failure(RoomError.NotYourTurn)
-        }
-
-        val action = NetworkAction(
-            actionId = UUID.randomUUID().toString(),
-            sequence = sequenceCounter.incrementAndGet(),
-            type = ActionType.ROLL_DICE,
-            playerId = active.id,
-            payload = "",
-            expectedVersion = state.version,
-            expectedHostEpoch = snapshot.meta.hostEpoch,
+        postGameActionWithRetry { snap, state, active -> NetworkAction(
+            actionId = UUID.randomUUID().toString(), sequence = sequenceCounter.incrementAndGet(),
+            type = ActionType.ROLL_DICE, playerId = active.id, payload = "",
+            expectedVersion = state.version, expectedHostEpoch = snap.meta.hostEpoch,
             timestamp = System.currentTimeMillis()
-        )
-
-        actionRepo.postAction(snapshot.meta.roomId, action)
+        )}
     }
 
     override suspend fun movePiece(pieceId: Int): Result<Unit> = withContext(Dispatchers.IO) {
-        val snapshot = _roomState.value ?: return@withContext Result.failure(RoomError.RoomNotFound)
-        val state = _gameState.value ?: return@withContext Result.failure(
-            RoomError.NetworkFailure("Still loading the game — wait a moment and retry.")
-        )
-        val active = state.activePlayer
-
-        val isHost = snapshot.meta.hostId == currentUid
-        if (active.id != currentUid && !canHostCoverTurn(isHost, snapshot.players.find { it.id == active.id })) {
-            return@withContext Result.failure(RoomError.NotYourTurn)
-        }
-
-        val action = NetworkAction(
-            actionId = UUID.randomUUID().toString(),
-            sequence = sequenceCounter.incrementAndGet(),
-            type = ActionType.MOVE_PIECE,
-            playerId = active.id,
-            payload = pieceId.toString(),
-            expectedVersion = state.version,
-            expectedHostEpoch = snapshot.meta.hostEpoch,
+        postGameActionWithRetry { snap, state, active -> NetworkAction(
+            actionId = UUID.randomUUID().toString(), sequence = sequenceCounter.incrementAndGet(),
+            type = ActionType.MOVE_PIECE, playerId = active.id, payload = pieceId.toString(),
+            expectedVersion = state.version, expectedHostEpoch = snap.meta.hostEpoch,
             timestamp = System.currentTimeMillis()
-        )
+        )}
+    }
 
-        actionRepo.postAction(snapshot.meta.roomId, action)
+    private suspend fun postGameActionWithRetry(
+        build: (RoomSnapshot, GameState, PlayerState) -> NetworkAction
+    ): Result<Unit> {
+        var lastErr: Throwable? = null
+        repeat(2) { attempt ->
+            val snap = _roomState.value ?: return Result.failure(RoomError.RoomNotFound)
+            val state = _gameState.value ?: return Result.failure(RoomError.NetworkFailure("Still loading the game — wait a moment and retry."))
+            val active = state.activePlayer
+            val isHost = snap.meta.hostId == currentUid
+            if (active.id != currentUid && !canHostCoverTurn(isHost, snap.players.find { it.id == active.id })) return Result.failure(RoomError.NotYourTurn)
+            val action = build(snap, state, active)
+            val pub = actionRepo.postAction(snap.meta.roomId, action)
+            if (pub.isFailure) { lastErr = pub.exceptionOrNull(); return@repeat }
+            if (snap.meta.hostId == currentUid) {
+                val local = authoritativeProcessor.processAction(action, state, snap.meta)
+                if (local != null) {
+                    _gameState.value = local.updatedState
+                    gameRepo.publishGameState(snap.meta.roomId, local.updatedState, local.updatedMeta)
+                    local.events.forEach { gameRepo.publishEvent(snap.meta.roomId, it) }
+                    return Result.success(Unit)
+                }
+                when (authoritativeProcessor.lastRejection) {
+                    is AuthoritativeGameProcessor.Rejection.StaleVersion,
+                    is AuthoritativeGameProcessor.Rejection.StaleEpoch,
+                    is AuthoritativeGameProcessor.Rejection.AuthorityMismatch -> {
+                        if (attempt == 0) { delay(220); return@repeat }
+                        return Result.failure(RoomError.StaleAction)
+                    }
+                    is AuthoritativeGameProcessor.Rejection.WrongPhase -> return Result.failure(RoomError.NetworkFailure("Not the right moment for that action."))
+                    is AuthoritativeGameProcessor.Rejection.IllegalMove -> return Result.failure(RoomError.IllegalMove)
+                    is AuthoritativeGameProcessor.Rejection.WrongPlayer -> return Result.failure(RoomError.NotYourTurn)
+                    else -> {}
+                }
+            }
+            val waitVersion = action.expectedVersion
+            val observed = withTimeoutOrNull(2200L) {
+                var cur: GameState? = _gameState.value
+                while (cur == null || cur.version == waitVersion) { delay(90); cur = _gameState.value; if (cur != null && cur.version != waitVersion) break }
+                cur
+            }
+            if (observed != null && observed.version != waitVersion) return Result.success(Unit)
+            val cur2 = _gameState.value
+            if (cur2 != null && cur2.version != waitVersion) return Result.success(Unit)
+            if (authoritativeProcessor.lastRejection is AuthoritativeGameProcessor.Rejection.StaleVersion ||
+                authoritativeProcessor.lastRejection is AuthoritativeGameProcessor.Rejection.StaleEpoch) {
+                if (attempt == 0) { delay(220); return@repeat }
+                return Result.failure(RoomError.StaleAction)
+            }
+            if (attempt == 0) { delay(260); return@repeat }
+        }
+        return lastErr?.let { Result.failure(it) } ?: Result.failure(RoomError.NetworkFailure("Action not confirmed — will retry when the board syncs."))
     }
 
     override suspend fun sendChat(message: String): Result<Unit> = withContext(Dispatchers.IO) {
