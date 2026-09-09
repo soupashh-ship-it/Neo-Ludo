@@ -9,6 +9,21 @@ if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+// Release-signing credentials. Keystore + passwords are git-ignored and
+// live only on this machine (app/neoludo-release.keystore, local.properties).
+val neoludoKeystoreFile = file("neoludo-release.keystore")
+val neoludoKeystorePasswords: Map<String, String> = run {
+    val propsFile = rootProject.file("local.properties")
+    if (!propsFile.exists()) return@run emptyMap()
+    propsFile.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+        .associate {
+            val idx = it.indexOf("=")
+            it.substring(0, idx).trim() to it.substring(idx + 1).trim()
+        }
+}
+
 android {
     namespace = "com.neoludo.game"
     compileSdk = 34
@@ -17,8 +32,8 @@ android {
         applicationId = "com.neoludo.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = 17
-        versionName = "2.1.0"
+        versionCode = 18
+        versionName = "2.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -26,8 +41,24 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            if (neoludoKeystoreFile.exists()) {
+                storeFile = neoludoKeystoreFile
+                storePassword = neoludoKeystorePasswords["neoludo.storePassword"]
+                keyAlias = "neoludo"
+                keyPassword = neoludoKeystorePasswords["neoludo.keyPassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Signed locally when the key exists. Fresh clones without the
+            // key still build; the APK just won't be signed.
+            if (neoludoKeystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
